@@ -10,6 +10,13 @@ OLD_LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.claude.menubar.plist"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 BINARY="$SCRIPT_DIR/.build/release/AgentPulse"
 
+# ---------- 0. Prerequisites ----------
+if ! command -v swift &>/dev/null; then
+    echo "  ERROR: Swift not found. Install Xcode Command Line Tools:"
+    echo "    xcode-select --install"
+    exit 1
+fi
+
 # ---------- 1. Build ----------
 echo "Building AgentPulse..."
 cd "$SCRIPT_DIR"
