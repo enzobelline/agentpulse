@@ -49,7 +49,7 @@ Sessions needing attention (waiting/done) float to the top.
 - **Smart Notifications** — desktop alerts when sessions need input or finish, with click-to-focus
 - **Project Grouping** — sessions grouped by directory when multiple projects are active
 - **One-Click Worktree** — create a sibling git worktree from any session's submenu
-- **Worktree Lineage** — worktree sessions display as `falcon -> myproject`
+- **Worktree Lineage** — worktree sessions display as `falcon → myproject`
 - **Pin Sessions** — pin important sessions so they always show
 - **Session History** — last 50 closed sessions with one-click resume
 - **Prompt Capture** — shows your actual prompt text as the session summary
@@ -59,7 +59,7 @@ Sessions needing attention (waiting/done) float to the top.
 
 ## How It Works
 
-Claude Code hooks (configured in `~/.claude/settings.json`) call `update_status.py` on session lifecycle events. All sessions are written to `~/.claude/session-status.json`. AgentPulse watches this file and updates the menubar in real time (~23ms latency).
+Claude Code hooks (configured in `~/.claude/settings.json`) call `update_status.py` on session lifecycle events. All sessions are written to `~/.claude/session-status.json`. AgentPulse watches this file and updates the menubar in real time.
 
 The shell wrapper (`run_update_status.sh`) captures the TTY of the Claude CLI process, enabling click-to-attach — AgentPulse finds the exact Terminal tab by matching TTY devices.
 
