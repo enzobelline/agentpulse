@@ -65,6 +65,11 @@ The shell wrapper (`run_update_status.sh`) captures the TTY of the Claude CLI pr
 
 ## Troubleshooting
 
+**Can't see the menubar icon:**
+- On MacBooks with a notch, the icon may be hidden behind other menubar items
+- Hold `Cmd` and drag it to a visible spot
+- Or go to System Settings → Displays → "More Space" for extra menubar room
+
 **No sessions appearing:**
 - Check hooks: `cat ~/.claude/settings.json | grep run_update_status`
 - Re-run `./install.sh` to reconfigure

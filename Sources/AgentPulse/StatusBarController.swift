@@ -63,6 +63,8 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
 
             You'll get desktop notifications when sessions finish or need input.
 
+            Tip: On MacBooks with a notch, the icon may be hidden behind other menubar items. Hold ⌘ and drag it to a visible spot, or go to System Settings → Displays → "More Space" for extra menubar room.
+
             Permissions needed:
             • Automation → Terminal: Required for "Attach to Session" and "Open in Terminal" (macOS will prompt on first use)
             • Notifications: Allow when prompted for desktop notification banners
