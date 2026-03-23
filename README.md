@@ -31,11 +31,11 @@ Or download the latest universal binary (arm64 + x86_64) from [Releases](https:/
 ## What You Get
 
 ```
-⏸ ◆  ✓ ●  ⠋ ▲  ⠋ ■  …(1)
+‖ ◆  ✓ ●  ⠋ ▲  ⠋ ■  …(1)
 ```
 
 - `⠋` Spinner = running
-- `⏸` = waiting for permission
+- `‖` = waiting for permission
 - `✓` = done
 - Symbols (◆ ● ▲ ■ ★ etc.) = unique per-session identity
 - `…(N)` = additional sessions beyond the visible limit
