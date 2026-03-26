@@ -9,6 +9,8 @@ LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.agentpulse.menubar.plist"
 OLD_LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.claude.menubar.plist"
 CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 BINARY="$SCRIPT_DIR/.build/release/AgentPulse"
+APP_BUNDLE="$SCRIPT_DIR/AgentPulse.app"
+APP_BINARY="$APP_BUNDLE/Contents/MacOS/AgentPulse"
 
 # ---------- 0. Prerequisites ----------
 if ! command -v swift &>/dev/null; then
@@ -27,6 +29,30 @@ if [ ! -f "$BINARY" ]; then
 fi
 echo "  ✓ Build succeeded."
 
+# ---------- 1b. Create .app bundle ----------
+echo "Creating app bundle..."
+mkdir -p "$APP_BUNDLE/Contents/MacOS"
+cp "$BINARY" "$APP_BINARY"
+cat > "$APP_BUNDLE/Contents/Info.plist" <<INFOPLIST_EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.agentpulse.menubar</string>
+    <key>CFBundleName</key>
+    <string>AgentPulse</string>
+    <key>CFBundleExecutable</key>
+    <string>AgentPulse</string>
+    <key>CFBundleVersion</key>
+    <string>3.0.0</string>
+    <key>LSUIElement</key>
+    <true/>
+</dict>
+</plist>
+INFOPLIST_EOF
+echo "  ✓ App bundle created."
+
 # ---------- 2. Stop old Python menubar if running ----------
 if [ -f "$OLD_LAUNCH_AGENT" ]; then
     echo "Detected old Python menubar (com.claude.menubar)..."
@@ -41,7 +67,7 @@ if [ -f "$LAUNCH_AGENT" ]; then
     echo "  ✓ Stopped previous AgentPulse."
 fi
 # Also kill any manually-launched instance
-pkill -f '.build/release/AgentPulse' 2>/dev/null || true
+pkill -f 'AgentPulse' 2>/dev/null || true
 
 # ---------- 4. Make scripts executable ----------
 chmod +x "$SCRIPT_DIR/update_status.py"
@@ -161,7 +187,7 @@ cat > "$LAUNCH_AGENT" <<PLIST_EOF
     <string>com.agentpulse.menubar</string>
     <key>ProgramArguments</key>
     <array>
-        <string>$BINARY</string>
+        <string>$APP_BINARY</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -184,7 +210,9 @@ echo
 echo "You should see ○ in your menubar."
 echo
 echo "Permissions (macOS will prompt on first use):"
-echo "  • Automation → Terminal: Required for 'Attach to Session' and 'Open in Terminal'"
+echo "  • Accessibility: Required for global keyboard shortcut (Ctrl+Option+A)"
+echo "    System Settings → Privacy & Security → Accessibility → toggle AgentPulse on"
+echo "  • Automation → Terminal: Required for 'Attach to Session' and 'Open New Session'"
 echo "    If not prompted, go to: System Settings → Privacy & Security → Automation"
 echo "    and allow AgentPulse to control Terminal.app."
 echo "  • Notifications: Allow when prompted for desktop notification banners."

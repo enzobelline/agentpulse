@@ -48,6 +48,11 @@ jobs:
       - name: Verify binary exists
         run: test -f .build/release/AgentPulse
 
+      - name: Verify app bundle was created
+        run: |
+          test -f AgentPulse.app/Contents/MacOS/AgentPulse
+          test -f AgentPulse.app/Contents/Info.plist
+
       - name: Verify LaunchAgent was created
         run: test -f ~/Library/LaunchAgents/com.agentpulse.menubar.plist
 

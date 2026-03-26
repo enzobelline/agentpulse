@@ -17,11 +17,41 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
     /// Whether the dropdown menu is currently open (tracking events)
     private var menuIsOpen = false
 
+    private var globalHotkeyMonitor: Any?
+
     init(store: SessionStore) {
         self.store = store
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
         statusItem.button?.title = Constants.iconSleeping
+        registerGlobalHotkey()
+    }
+
+    private func registerGlobalHotkey() {
+        // Request Accessibility permission if not already granted
+        let key = "AXTrustedCheckOptionPrompt" as CFString
+        let trusted = AXIsProcessTrustedWithOptions(
+            [key: true] as CFDictionary
+        )
+        if !trusted {
+            // macOS will show the Accessibility prompt — hotkey will work after user grants it and restarts
+            return
+        }
+
+        // Ctrl+Option+A to toggle the dropdown
+        globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let required: NSEvent.ModifierFlags = [.control, .option]
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(required),
+                  event.charactersIgnoringModifiers == "a" else { return }
+            MainActor.assumeIsolated {
+                self?.toggleMenu()
+            }
+        }
+    }
+
+    private func toggleMenu() {
+        guard let button = statusItem.button else { return }
+        button.performClick(nil)
     }
 
     // MARK: - SessionStoreDelegate
@@ -284,19 +314,26 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                     }
                     let submenu = NSMenu()
 
+                    // Pin (top of submenu)
+                    let pinLabel = isPinned ? "▸ Unpin" : "▹ Pin"
+                    let pinItem = NSMenuItem(title: pinLabel, action: #selector(togglePin(_:)), keyEquivalent: "")
+                    pinItem.target = self
+                    pinItem.representedObject = key
+                    submenu.addItem(pinItem)
+
+                    // Open New Session (opens Terminal + runs claude)
+                    let openItem = NSMenuItem(title: "Open New Session", action: #selector(openNewSession(_:)), keyEquivalent: "")
+                    openItem.target = self
+                    openItem.representedObject = session.directory ?? session.name
+                    submenu.addItem(openItem)
+
                     // Create New Worktree
                     let worktreeItem = NSMenuItem(title: "Create New Worktree", action: #selector(branchSession(_:)), keyEquivalent: "")
                     worktreeItem.target = self
                     worktreeItem.representedObject = session.directory ?? session.name
                     submenu.addItem(worktreeItem)
 
-                    // Open in Terminal
-                    let openItem = NSMenuItem(title: "Open in Terminal", action: #selector(openTerminal(_:)), keyEquivalent: "")
-                    openItem.target = self
-                    openItem.representedObject = session.directory ?? session.name
-                    submenu.addItem(openItem)
-
-                    // Session ID (click to copy)
+                    // Copy Session ID
                     let sidLabel = shortSessionId(key)
                     let sidItem = NSMenuItem(title: sidLabel, action: #selector(copySessionId(_:)), keyEquivalent: "")
                     sidItem.target = self
@@ -309,12 +346,6 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                     pathItem.target = self
                     pathItem.representedObject = session.directory ?? session.name
                     submenu.addItem(pathItem)
-
-                    let pinLabel = isPinned ? "▸ Unpin" : "▹ Pin"
-                    let pinItem = NSMenuItem(title: pinLabel, action: #selector(togglePin(_:)), keyEquivalent: "")
-                    pinItem.target = self
-                    pinItem.representedObject = key
-                    submenu.addItem(pinItem)
 
                     let dismissLabel = duration.isEmpty ? "Dismiss" : "\(duration) · Dismiss"
                     let dismissItem = NSMenuItem(title: dismissLabel, action: #selector(dismissSession(_:)), keyEquivalent: "")
@@ -475,6 +506,27 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
         }
 
         menu.addItem(.separator())
+
+        // Help submenu
+        let helpItem = NSMenuItem(title: "Help", action: nil, keyEquivalent: "")
+        let helpSubmenu = NSMenu()
+
+        let shortcutsItem = NSMenuItem(title: "Keyboard Shortcuts", action: #selector(showShortcuts), keyEquivalent: "")
+        shortcutsItem.target = self
+        helpSubmenu.addItem(shortcutsItem)
+
+        let bugItem = NSMenuItem(title: "Report a Bug", action: #selector(openBugReport), keyEquivalent: "")
+        bugItem.target = self
+        helpSubmenu.addItem(bugItem)
+
+        helpSubmenu.addItem(.separator())
+
+        let aboutItem = NSMenuItem(title: "About AgentPulse", action: #selector(showAbout), keyEquivalent: "")
+        aboutItem.target = self
+        helpSubmenu.addItem(aboutItem)
+
+        helpItem.submenu = helpSubmenu
+        menu.addItem(helpItem)
 
         let quit = NSMenuItem(title: "Quit AgentPulse", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
@@ -674,19 +726,57 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
         }
     }
 
-    @objc private func openTerminal(_ sender: NSMenuItem) {
+    @objc private func openNewSession(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String else { return }
         let escaped = path.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         let script = """
             tell application "Terminal"
                 activate
-                do script "cd \\"\(escaped)\\""
+                do script "cd \\"\(escaped)\\" && claude"
             end tell
             """
         if let appleScript = NSAppleScript(source: script) {
             var error: NSDictionary?
             appleScript.executeAndReturnError(&error)
+        }
+    }
+
+    @objc private func showShortcuts() {
+        let alert = NSAlert()
+        alert.messageText = "Keyboard Shortcuts"
+        alert.informativeText = """
+            ⌃⌥A — Toggle AgentPulse dropdown
+            ⌘Q — Quit AgentPulse (from dropdown)
+
+            Click a session row to attach to its Terminal tab.
+            """
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    @objc private func openBugReport() {
+        if let url = URL(string: "https://github.com/enzobelline/agentpulse/issues/new") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    @objc private func showAbout() {
+        let alert = NSAlert()
+        alert.messageText = "AgentPulse"
+        alert.informativeText = """
+            Real-time Claude Code session monitor for your macOS menubar.
+
+            Version 3.0.0
+            github.com/enzobelline/agentpulse
+            """
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Open GitHub")
+        let response = alert.runModal()
+        if response == .alertSecondButtonReturn {
+            if let url = URL(string: "https://github.com/enzobelline/agentpulse") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 
@@ -697,7 +787,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
     /// Short session ID (first 4 chars of UUID) for display
     private func shortSessionId(_ key: String) -> String {
         let prefix = String(key.prefix(4))
-        return "Copy ID · \(prefix)"
+        return "Copy Session ID · \(prefix)"
     }
 
     /// Abbreviated path: "/…" + last component truncated to 9 chars
