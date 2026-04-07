@@ -162,6 +162,15 @@ final class SessionStore {
         settings.pinnedSessions.removeAll { keySet.contains($0) }
     }
 
+    func renameSession(_ key: String, displayName: String?) {
+        sessions[key]?.displayName = displayName
+        withFileLock {
+            var data = readCurrentFile()
+            data.sessions[key]?.displayName = displayName
+            writeFile(data)
+        }
+    }
+
     func togglePin(_ key: String) {
         withFileLock {
             var data = readCurrentFile()

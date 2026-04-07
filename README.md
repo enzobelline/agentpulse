@@ -44,18 +44,22 @@ Sessions needing attention (waiting/done) float to the top.
 
 ## Features
 
+- **Global Hotkey** — `Ctrl+Option+A` toggles the dropdown from anywhere (requires Accessibility permission)
 - **Click to Attach** — click any session to focus its Terminal tab (matches by TTY, works across Spaces)
 - **Live Activity** — see what Claude is doing: "Editing Models.swift...", "Running: git status..."
+- **Session Rename** — give sessions custom names; also updates the Terminal tab title
 - **Smart Notifications** — desktop alerts when sessions need input or finish, with click-to-focus
 - **Project Grouping** — sessions grouped by directory when multiple projects are active
 - **One-Click Worktree** — create a sibling git worktree from any session's submenu
 - **Worktree Lineage** — worktree sessions display as `falcon → myproject`
 - **Pin Sessions** — pin important sessions so they always show
-- **Session History** — last 50 closed sessions with one-click resume
+- **Session History** — last 50 closed sessions with searchable history and one-click resume
+- **Auto-Keywords** — extracts file names, tools, and prompt keywords for history search
 - **Prompt Capture** — shows your actual prompt text as the session summary
 - **Auto-Clear** — done sessions auto-remove after a configurable TTL
 - **Configurable Sounds** — per-event sound picker (hover to preview)
 - **Single Instance** — duplicate processes detected and prevented automatically
+- **Help Menu** — keyboard shortcuts reference, bug reporting link, about info
 
 ## How It Works
 
@@ -77,6 +81,10 @@ The shell wrapper (`run_update_status.sh`) captures the TTY of the Claude CLI pr
 
 **"Attach" opens new window instead of focusing existing tab:**
 - System Settings -> Desktop & Dock -> Mission Control -> "When switching to an application, switch to a Space with open windows" must be ON
+
+**Global hotkey not working:**
+- System Settings -> Privacy & Security -> Accessibility -> Toggle AgentPulse on
+- After granting permission, restart AgentPulse for the hotkey to register
 
 **Automation permission not granted:**
 - System Settings -> Privacy & Security -> Automation -> Allow AgentPulse to control Terminal.app

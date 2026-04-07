@@ -39,8 +39,16 @@ final class WorktreeManager {
         let repoName = URL(fileURLWithPath: repoRoot).lastPathComponent
         let existingNames = existingWorktreeNames(repoRoot)
 
-        guard let word = pickUnusedWord(existingWorktrees: existingNames, repoName: repoName) else {
-            showError("All worktree names in use. Remove some worktrees first.")
+        let autoWord = pickUnusedWord(existingWorktrees: existingNames, repoName: repoName)
+
+        guard let word = showNameDialog(repoName: repoName, suggestedName: autoWord) else {
+            return // user cancelled
+        }
+
+        // Validate the chosen name
+        let fullName = "\(repoName)-\(word)"
+        if existingNames.contains(fullName) {
+            showError("A worktree named '\(fullName)' already exists.")
             return
         }
 
@@ -99,6 +107,33 @@ final class WorktreeManager {
     }
 
     // MARK: - Dialogs
+
+    private func showNameDialog(repoName: String, suggestedName: String?) -> String? {
+        let alert = NSAlert()
+        alert.messageText = "Name Your Worktree"
+        alert.informativeText = "The worktree will be created as \(repoName)-<name> next to your repo."
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        input.stringValue = suggestedName ?? ""
+        input.placeholderString = "e.g. feature, bugfix, experiment"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return nil }
+
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty { return nil }
+
+        // Sanitize: replace spaces/special chars with hyphens, lowercase
+        let sanitized = name.lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9-]"#, with: "-", options: .regularExpression)
+            .replacingOccurrences(of: #"-+"#, with: "-", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        return sanitized.isEmpty ? nil : sanitized
+    }
 
     private func showDirtyDialog(repoName: String) -> DirtyAction {
         let alert = NSAlert()

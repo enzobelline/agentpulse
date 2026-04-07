@@ -32,7 +32,12 @@ echo "  ✓ Build succeeded."
 # ---------- 1b. Create .app bundle ----------
 echo "Creating app bundle..."
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BINARY" "$APP_BINARY"
+# Copy app icon if available
+if [ -f "$SCRIPT_DIR/assets/AppIcon.icns" ]; then
+    cp "$SCRIPT_DIR/assets/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+fi
 cat > "$APP_BUNDLE/Contents/Info.plist" <<INFOPLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -44,6 +49,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<INFOPLIST_EOF
     <string>AgentPulse</string>
     <key>CFBundleExecutable</key>
     <string>AgentPulse</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleVersion</key>
     <string>3.0.0</string>
     <key>LSUIElement</key>

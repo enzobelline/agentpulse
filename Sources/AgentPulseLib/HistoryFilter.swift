@@ -27,8 +27,8 @@ public func applyHistoryEntry(
     to entries: [HistoryEntry],
     maxEntries: Int = 50
 ) -> [HistoryEntry] {
-    guard !entries.contains(where: { $0.sessionId == entry.sessionId }) else { return entries }
-    var result = [entry] + entries
+    // Replace existing entry with updated data (latest wins)
+    var result = [entry] + entries.filter { $0.sessionId != entry.sessionId }
     if result.count > maxEntries {
         result = Array(result.prefix(maxEntries))
     }

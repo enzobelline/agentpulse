@@ -22,10 +22,12 @@ final class SessionHistory {
             sessionId: key,
             startedAt: session.startedAt ?? session.updatedAt,
             endedAt: session.updatedAt,
-            lastMessage: session.lastMessage
+            lastMessage: session.lastMessage,
+            displayName: session.displayName,
+            keywords: session.keywords,
+            promptTimeline: session.promptTimeline
         )
         let updated = applyHistoryEntry(entry, to: existing, maxEntries: maxEntries)
-        guard updated.count != existing.count || updated.first?.sessionId != existing.first?.sessionId else { return }
         save(updated)
     }
 

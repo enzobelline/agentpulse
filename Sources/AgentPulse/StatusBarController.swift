@@ -11,13 +11,15 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
     /// Tracked session menu items for in-place title updates (spinner animation while menu is open)
     private var sessionMenuItems: [(key: String, item: NSMenuItem)] = []
     /// Whether the menu structure needs a full rebuild (sessions added/removed/reordered)
-    private var menuNeedsRebuild = true
+    var menuNeedsRebuild = true
     /// Fast timer for spinner animation while the menu is open
     private var animationTimer: Timer?
     /// Whether the dropdown menu is currently open (tracking events)
     private var menuIsOpen = false
 
     private var globalHotkeyMonitor: Any?
+    private let historySearchHandler = HistorySearchHandler()
+    private let historyActionTarget = HistoryActionTarget()
 
     init(store: SessionStore) {
         self.store = store
@@ -193,7 +195,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
         }
 
         if overflow > 0 {
-            allParts.append("…(\(overflow))")
+            allParts.append("(\(overflow))")
         }
 
         statusItem.button?.title = allParts.joined(separator: " ")
@@ -221,17 +223,51 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
         } else {
             sym = symbol
         }
-        let sum = AgentPulseLib.displaySummary(for: session)
+        let summary = AgentPulseLib.displaySummary(for: session)
         let lastUpdate = session.updatedAt > 0
             ? formatDuration(now - session.updatedAt) : ""
 
-        var label = "\(pinPrefix)\(icon) \(sym) · \(sum) - \(session.status)"
-        if !lastUpdate.isEmpty {
-            label += " (\(lastUpdate) ago)"
+        // Build the description part: "Name | prompt" if renamed, just "prompt" otherwise
+        // Total budget ~65 chars. Name displays up to 25, prompt gets the rest.
+        let desc: String
+        if let name = session.displayName, !name.isEmpty {
+            let maxNameDisplay = 25
+            let displayName = name.count > maxNameDisplay
+                ? String(name.prefix(maxNameDisplay - 1)) + "…"
+                : name
+            let promptBudget = max(0, 65 - displayName.count - 3) // -3 for " | "
+            if promptBudget > 8, !summary.isEmpty {
+                let truncated = summary.count > promptBudget
+                    ? String(summary.prefix(promptBudget - 1)) + "…"
+                    : summary
+                desc = "\(displayName) | \(truncated)"
+            } else {
+                desc = displayName
+            }
+        } else {
+            desc = summary
         }
+
+        let prefix = "\(pinPrefix)\(icon) \(sym) · "
+        let suffix = !lastUpdate.isEmpty ? " (\(lastUpdate))" : ""
+        let maxDesc = 75 - prefix.count - suffix.count
+
+        // Truncate desc if needed to fit budget
+        let fitDesc = desc.count > maxDesc && maxDesc > 3
+            ? String(desc.prefix(maxDesc - 1)) + "…"
+            : desc
+
+        var label = "\(prefix)\(fitDesc)\(suffix)"
+
         // Show activity inline if running
         if session.status == "running", let activity = AgentPulseLib.displayActivity(for: session) {
-            label += " — \(activity)"
+            let actBudget = 80 - label.count - 3 // -3 for " — "
+            if actBudget > 5 {
+                let fitAct = activity.count > actBudget
+                    ? String(activity.prefix(actBudget - 1)) + "…"
+                    : activity
+                label += " — \(fitAct)"
+            }
         }
         return label
     }
@@ -252,6 +288,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
 
     private func buildMenu() {
         let menu = NSMenu()
+        menu.minimumWidth = 550
         sessionMenuItems = []
 
         let allForMenu = store.sessions
@@ -305,8 +342,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                     let duration = started > 0 ? formatDuration(now - started) : ""
 
                     let label = sessionTitle(key: key, session: session, isPinned: isPinned, now: now)
-                    let sessionItem = NSMenuItem(title: label, action: #selector(attachToSession(_:)), keyEquivalent: "")
-                    sessionItem.target = self
+                    let sessionItem = NSMenuItem(title: label, action: nil, keyEquivalent: "")
                     sessionItem.representedObject = key
                     sessionItem.image = nil
                     if needsGroupHeaders {
@@ -314,12 +350,25 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                     }
                     let submenu = NSMenu()
 
-                    // Pin (top of submenu)
+                    // Go to Terminal (first item — primary action)
+                    let goItem = NSMenuItem(title: "Go to Terminal", action: #selector(attachToSession(_:)), keyEquivalent: "")
+                    goItem.target = self
+                    goItem.representedObject = key
+                    submenu.addItem(goItem)
+                    submenu.addItem(.separator())
+
+                    // Pin
                     let pinLabel = isPinned ? "▸ Unpin" : "▹ Pin"
                     let pinItem = NSMenuItem(title: pinLabel, action: #selector(togglePin(_:)), keyEquivalent: "")
                     pinItem.target = self
                     pinItem.representedObject = key
                     submenu.addItem(pinItem)
+
+                    // Rename
+                    let renameItem = NSMenuItem(title: "Rename", action: #selector(renameSession(_:)), keyEquivalent: "")
+                    renameItem.target = self
+                    renameItem.representedObject = key
+                    submenu.addItem(renameItem)
 
                     // Open New Session (opens Terminal + runs claude)
                     let openItem = NSMenuItem(title: "Open New Session", action: #selector(openNewSession(_:)), keyEquivalent: "")
@@ -364,6 +413,10 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
 
         // Clear done sessions (local only)
         let doneCount = store.sessions.values.filter { $0.status == "done" }.count
+        // Clear submenu
+        let clearItem = NSMenuItem(title: "Clear", action: nil, keyEquivalent: "")
+        let clearSubmenu = NSMenu()
+
         if doneCount > 0 {
             let clearDone = NSMenuItem(
                 title: "Clear Done Sessions (\(doneCount))",
@@ -371,10 +424,8 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                 keyEquivalent: ""
             )
             clearDone.target = self
-            menu.addItem(clearDone)
+            clearSubmenu.addItem(clearDone)
         }
-
-        // Clear all sessions
         if !store.sessions.isEmpty {
             let clearAll = NSMenuItem(
                 title: "Clear All Sessions",
@@ -382,48 +433,12 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                 keyEquivalent: ""
             )
             clearAll.target = self
-            menu.addItem(clearAll)
+            clearSubmenu.addItem(clearAll)
+        }
+        if doneCount > 0 || !store.sessions.isEmpty {
+            clearSubmenu.addItem(.separator())
         }
 
-        // Notifications toggle
-        let notifLabel = "Notifications: \(store.settings.notificationsEnabled ? "On" : "Off")"
-        let notifItem = NSMenuItem(title: notifLabel, action: #selector(toggleNotifications), keyEquivalent: "")
-        notifItem.target = self
-        menu.addItem(notifItem)
-
-        // Sound: On/Off ▸ Waiting: Purr ▸ [sounds...], Done: Glass ▸ [sounds...]
-        let soundOn = store.settings.soundEnabled
-        let soundLabel = "Sound: \(soundOn ? "On" : "Off")"
-        let soundItem = NSMenuItem(title: soundLabel, action: nil, keyEquivalent: "")
-        let soundSubmenu = NSMenu()
-
-        let toggleItem = NSMenuItem(title: soundOn ? "Turn Off" : "Turn On", action: #selector(toggleSound), keyEquivalent: "")
-        toggleItem.target = self
-        soundSubmenu.addItem(toggleItem)
-        soundSubmenu.addItem(.separator())
-
-        let waitingItem = NSMenuItem(title: "Waiting: \(store.settings.waitingSound)", action: nil, keyEquivalent: "")
-        waitingItem.submenu = SoundPickerMenu(current: store.settings.waitingSound) { [weak self] sound in
-            self?.store.settings.waitingSound = sound
-            self?.store.saveSettings()
-            self?.menuNeedsRebuild = true
-            self?.refresh()
-        }
-        soundSubmenu.addItem(waitingItem)
-
-        let doneItem = NSMenuItem(title: "Done: \(store.settings.doneSound)", action: nil, keyEquivalent: "")
-        doneItem.submenu = SoundPickerMenu(current: store.settings.doneSound) { [weak self] sound in
-            self?.store.settings.doneSound = sound
-            self?.store.saveSettings()
-            self?.menuNeedsRebuild = true
-            self?.refresh()
-        }
-        soundSubmenu.addItem(doneItem)
-
-        soundItem.submenu = soundSubmenu
-        menu.addItem(soundItem)
-
-        // Auto-clear TTL
         let ttl = store.settings.autoClearAfterMinutes
         let ttlLabel = "Auto-Clear Done: \(AgentPulseLib.autoClearLabel(ttl))"
         let ttlItem = NSMenuItem(title: ttlLabel, action: nil, keyEquivalent: "")
@@ -437,7 +452,47 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
             ttlSubmenu.addItem(item)
         }
         ttlItem.submenu = ttlSubmenu
-        menu.addItem(ttlItem)
+        clearSubmenu.addItem(ttlItem)
+
+        clearItem.submenu = clearSubmenu
+        menu.addItem(clearItem)
+
+        // Notifications submenu
+        let notifItem = NSMenuItem(title: "Notifications", action: nil, keyEquivalent: "")
+        let notifSubmenu = NSMenu()
+
+        let notifToggleLabel = "Notifications: \(store.settings.notificationsEnabled ? "On" : "Off")"
+        let notifToggle = NSMenuItem(title: notifToggleLabel, action: #selector(toggleNotifications), keyEquivalent: "")
+        notifToggle.target = self
+        notifSubmenu.addItem(notifToggle)
+
+        let soundOn = store.settings.soundEnabled
+        let soundToggle = NSMenuItem(title: "Sound: \(soundOn ? "On" : "Off")", action: #selector(toggleSound), keyEquivalent: "")
+        soundToggle.target = self
+        notifSubmenu.addItem(soundToggle)
+
+        notifSubmenu.addItem(.separator())
+
+        let waitingItem = NSMenuItem(title: "Waiting: \(store.settings.waitingSound)", action: nil, keyEquivalent: "")
+        waitingItem.submenu = SoundPickerMenu(current: store.settings.waitingSound) { [weak self] sound in
+            self?.store.settings.waitingSound = sound
+            self?.store.saveSettings()
+            self?.menuNeedsRebuild = true
+            self?.refresh()
+        }
+        notifSubmenu.addItem(waitingItem)
+
+        let doneItem = NSMenuItem(title: "Done: \(store.settings.doneSound)", action: nil, keyEquivalent: "")
+        doneItem.submenu = SoundPickerMenu(current: store.settings.doneSound) { [weak self] sound in
+            self?.store.settings.doneSound = sound
+            self?.store.saveSettings()
+            self?.menuNeedsRebuild = true
+            self?.refresh()
+        }
+        notifSubmenu.addItem(doneItem)
+
+        notifItem.submenu = notifSubmenu
+        menu.addItem(notifItem)
 
         // Visible sessions count
         let visibleItem = NSMenuItem(title: "Visible: \(store.settings.maxVisibleSessions)", action: nil, keyEquivalent: "")
@@ -459,47 +514,8 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
         if !history.isEmpty {
             let historyItem = NSMenuItem(title: "History (\(history.count))", action: nil, keyEquivalent: "")
             let historySubmenu = NSMenu()
-            let now = Date().timeIntervalSince1970
-            for (index, entry) in history.prefix(20).enumerated() {
-                let dirName = URL(fileURLWithPath: entry.directory).lastPathComponent
-                let ago = formatDuration(now - entry.endedAt)
-                // Use lastMessage if available, otherwise fall back to prompt summary
-                let displaySummary: String
-                if let msg = entry.lastMessage, !msg.isEmpty {
-                    displaySummary = msg.count > 50
-                        ? String(msg.prefix(47)) + "…" : msg
-                } else {
-                    displaySummary = entry.summary.count > 50
-                        ? String(entry.summary.prefix(47)) + "…" : entry.summary
-                }
-                let title = "\(entry.symbol) · \(dirName) (\(ago) ago)"
-                let hItem = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                hItem.toolTip = displaySummary
-
-                // Submenu with Resume and Delete
-                let hSub = NSMenu()
-                let info: [String: Any] = [
-                    "directory": entry.directory,
-                    "sessionId": entry.sessionId,
-                ]
-                let resumeItem = NSMenuItem(title: "Resume", action: #selector(resumeSession(_:)), keyEquivalent: "")
-                resumeItem.target = self
-                resumeItem.representedObject = info
-                hSub.addItem(resumeItem)
-
-                let deleteItem = NSMenuItem(title: "Delete", action: #selector(deleteHistoryEntry(_:)), keyEquivalent: "")
-                deleteItem.target = self
-                deleteItem.tag = index
-                hSub.addItem(deleteItem)
-
-                hItem.submenu = hSub
-                historySubmenu.addItem(hItem)
-            }
-
-            historySubmenu.addItem(.separator())
-            let clearItem = NSMenuItem(title: "Clear History", action: #selector(clearHistory), keyEquivalent: "")
-            clearItem.target = self
-            historySubmenu.addItem(clearItem)
+            historySubmenu.delegate = historySearchHandler
+            historySearchHandler.buildHistoryMenu(historySubmenu, history: history, controller: self, actionTarget: historyActionTarget)
 
             historyItem.submenu = historySubmenu
             menu.addItem(historyItem)
@@ -627,39 +643,39 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
             openTerminalAt(dir)
 
         case .activateWindow(let tty):
-            // Step 1: Find the Terminal tab with matching TTY, select it, and make its window frontmost.
-            // We do NOT call `activate` from AppleScript — it's less reliable for cross-Space switching.
-            let findScript = """
+            // Shell out to osascript — NSAppleScript from ad-hoc signed apps
+            // doesn't get Space-switching privileges, but osascript does.
+            let script = """
                 tell application "Terminal"
                     repeat with w in windows
                         repeat with t in tabs of w
                             if tty of t is "\(tty)" then
                                 set selected tab of w to t
-                                set index of w to 1
-                                return true
+                                set frontmost of w to true
+                                activate
+                                return "found"
                             end if
                         end repeat
                     end repeat
-                    return false
+                    return "not found"
                 end tell
                 """
-            var found = false
-            if let appleScript = NSAppleScript(source: findScript) {
-                var error: NSDictionary?
-                let result = appleScript.executeAndReturnError(&error)
-                found = result.booleanValue
-            }
-
-            if found {
-                // Step 2: Activate Terminal via Cocoa API — more reliable for switching Spaces.
-                // NSRunningApplication.activate() goes through the window server's native activation
-                // path, which respects the "switch to Space with open windows" Mission Control setting
-                // more consistently than AppleScript's `activate` command.
-                if let terminal = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Terminal").first {
-                    terminal.activate()
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = ["-e", script]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            do {
+                try process.run()
+                process.waitUntilExit()
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if output != "found" {
+                    let dir = session?.directory ?? key
+                    openTerminalAt(dir)
                 }
-            } else {
-                // TTY not found in any Terminal window — tab was closed, fall back
+            } catch {
                 let dir = session?.directory ?? key
                 openTerminalAt(dir)
             }
@@ -676,10 +692,10 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                 do script "cd \\"\(escaped)\\""
             end tell
             """
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
-        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+        try? process.run()
     }
 
     @objc private func branchSession(_ sender: NSMenuItem) {
@@ -687,42 +703,40 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
         worktreeManager.branchFromSession(directory: path)
     }
 
-    @objc private func resumeSession(_ sender: NSMenuItem) {
-        guard let info = sender.representedObject as? [String: Any],
-              let dir = info["directory"] as? String,
-              let sessionId = info["sessionId"] as? String else { return }
-        let escaped = dir.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
-            tell application "Terminal"
-                activate
-                do script "cd \\"\(escaped)\\" && claude --resume \(sessionId)"
-            end tell
-            """
-        if let appleScript = NSAppleScript(source: script) {
-            var error: NSDictionary?
-            appleScript.executeAndReturnError(&error)
+    @objc nonisolated func copyKeywords(_ sender: NSMenuItem) {
+        guard let kw = sender.representedObject as? [String] else { return }
+        let text = kw.joined(separator: ", ")
+        nonisolated(unsafe) let item = sender
+        MainActor.assumeIsolated {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            item.title = "🏷 Copied!"
         }
     }
 
-    @objc private func deleteHistoryEntry(_ sender: NSMenuItem) {
-        SessionHistory.shared.removeEntry(at: sender.tag)
-        menuNeedsRebuild = true
-        refresh()
+    @objc nonisolated func deleteHistoryEntry(_ sender: NSMenuItem) {
+        let tag = sender.tag
+        MainActor.assumeIsolated {
+            SessionHistory.shared.removeEntry(at: tag)
+            self.menuNeedsRebuild = true
+            self.refresh()
+        }
     }
 
-    @objc private func clearHistory() {
-        let alert = NSAlert()
-        alert.messageText = "Clear History"
-        alert.informativeText = "Are you sure you want to clear all session history? This cannot be undone."
-        alert.addButton(withTitle: "Clear")
-        alert.addButton(withTitle: "Cancel")
-        alert.alertStyle = .warning
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            SessionHistory.shared.clearAll()
-            menuNeedsRebuild = true
-            refresh()
+    @objc nonisolated func clearHistory() {
+        MainActor.assumeIsolated {
+            let alert = NSAlert()
+            alert.messageText = "Clear History"
+            alert.informativeText = "Are you sure you want to clear all session history? This cannot be undone."
+            alert.addButton(withTitle: "Clear")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                SessionHistory.shared.clearAll()
+                self.menuNeedsRebuild = true
+                self.refresh()
+            }
         }
     }
 
@@ -736,6 +750,77 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
                 do script "cd \\"\(escaped)\\" && claude"
             end tell
             """
+        if let appleScript = NSAppleScript(source: script) {
+            var error: NSDictionary?
+            appleScript.executeAndReturnError(&error)
+        }
+    }
+
+    @objc private func renameSession(_ sender: NSMenuItem) {
+        guard let key = sender.representedObject as? String else { return }
+        let currentName = store.sessions[key]?.displayName ?? store.sessions[key]?.summary ?? ""
+
+        let alert = NSAlert()
+        alert.messageText = "Rename Session"
+        alert.informativeText = "Enter a name for this session (max 40 chars):"
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        input.stringValue = currentName
+        input.placeholderString = "e.g. auth refactor, bug #342"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let raw = input.stringValue.trimmingCharacters(in: .whitespaces)
+            let newName = raw.count > 40 ? String(raw.prefix(40)) : raw
+            store.renameSession(key, displayName: newName.isEmpty ? nil : newName)
+            // Update Terminal tab title via AppleScript (safe — no TTY writes)
+            if let tty = store.sessions[key]?.tty {
+                setTerminalTabTitle(tty: tty, title: newName.isEmpty ? nil : newName)
+            }
+            menuNeedsRebuild = true
+            refresh()
+        }
+    }
+
+    /// Set or clear the Terminal.app tab title for a given TTY, using AppleScript.
+    /// Does not write to the TTY stream — purely Terminal.app UI.
+    private func setTerminalTabTitle(tty: String, title: String?) {
+        let escaped = tty.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script: String
+        if let title = title {
+            let escapedTitle = title.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+            script = """
+                tell application "Terminal"
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            if tty of t is "\(escaped)" then
+                                set custom title of t to "\(escapedTitle)"
+                                set title displays custom title of t to true
+                            end if
+                        end repeat
+                    end repeat
+                end tell
+                """
+        } else {
+            // Clear custom title — revert to default
+            script = """
+                tell application "Terminal"
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            if tty of t is "\(escaped)" then
+                                set title displays custom title of t to false
+                            end if
+                        end repeat
+                    end repeat
+                end tell
+                """
+        }
         if let appleScript = NSAppleScript(source: script) {
             var error: NSDictionary?
             appleScript.executeAndReturnError(&error)
@@ -795,6 +880,298 @@ final class StatusBarController: NSObject, SessionStoreDelegate, NSMenuDelegate 
         let last = URL(fileURLWithPath: path).lastPathComponent
         let truncated = last.count > 9 ? String(last.prefix(9)) : last
         return "/…\(truncated)"
+    }
+}
+
+// MARK: - History Action Target (NOT @MainActor — required for NSMenu dispatch)
+
+/// Plain NSObject target for history submenu actions.
+/// NSMenu's ObjC runtime cannot dispatch to @MainActor classes.
+final class HistoryActionTarget: NSObject {
+    @objc func resumeSession(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let dir = info["directory"] as? String,
+              let sessionId = info["sessionId"] as? String else { return }
+        // Write a .command file that Terminal opens natively — no automation permission needed
+        let tmpPath = NSTemporaryDirectory() + "agentpulse-resume.command"
+        let script = "#!/bin/bash\ncd \"\(dir)\" && claude --resume \(sessionId)\n"
+        do {
+            try script.write(toFile: tmpPath, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
+            NSWorkspace.shared.open(URL(fileURLWithPath: tmpPath))
+        } catch {}
+    }
+
+    @objc func resumeSessionDangerous(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let dir = info["directory"] as? String,
+              let sessionId = info["sessionId"] as? String else { return }
+        let tmpPath = NSTemporaryDirectory() + "agentpulse-resume.command"
+        let script = "#!/bin/bash\ncd \"\(dir)\" && claude --resume \(sessionId) --dangerously-skip-permissions\n"
+        do {
+            try script.write(toFile: tmpPath, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
+            NSWorkspace.shared.open(URL(fileURLWithPath: tmpPath))
+        } catch {}
+    }
+
+    @objc func copyResumeCommand(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let dir = info["directory"] as? String,
+              let sessionId = info["sessionId"] as? String else { return }
+        let command = "cd \"\(dir)\" && claude --resume \(sessionId)"
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        sender.title = "Copied!"
+    }
+
+    @objc func copyKeywords(_ sender: NSMenuItem) {
+        guard let kw = sender.representedObject as? [String] else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(kw.joined(separator: ", "), forType: .string)
+        sender.title = "🏷 Copied!"
+    }
+
+    @objc func deleteHistoryEntry(_ sender: NSMenuItem) {
+        let tag = sender.tag
+        DispatchQueue.main.async {
+            SessionHistory.shared.removeEntry(at: tag)
+        }
+    }
+
+    @objc func clearHistory(_ sender: NSMenuItem) {
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = "Clear History"
+            alert.informativeText = "Are you sure you want to clear all session history? This cannot be undone."
+            alert.addButton(withTitle: "Clear")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            if alert.runModal() == .alertFirstButtonReturn {
+                SessionHistory.shared.clearAll()
+            }
+        }
+    }
+}
+
+// MARK: - Menu Search Field View
+
+/// Container view that holds an NSSearchField with padding and ensures it gets focus in a menu.
+final class MenuSearchFieldView: NSView {
+    let searchField: NSSearchField
+
+    init(width: CGFloat = 300) {
+        let hPadding: CGFloat = 16
+        let vPadding: CGFloat = 8
+        let fieldHeight: CGFloat = 24
+        searchField = NSSearchField(frame: NSRect(x: hPadding, y: vPadding, width: width - hPadding * 2, height: fieldHeight))
+        searchField.focusRingType = .none
+        searchField.sendsSearchStringImmediately = true
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: fieldHeight + vPadding * 2))
+        addSubview(searchField)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let field = self?.searchField else { return }
+            field.window?.makeFirstResponder(field)
+        }
+    }
+}
+
+// MARK: - History Search Handler
+
+/// Manages the history submenu with a search field that filters entries by keyword/displayName/summary.
+@MainActor
+final class HistorySearchHandler: NSObject, NSMenuDelegate, NSSearchFieldDelegate {
+    private var controller: StatusBarController?
+    private var actionTarget: HistoryActionTarget?
+    private var allHistory: [HistoryEntry] = []
+    private weak var historyMenu: NSMenu?
+
+    func buildHistoryMenu(_ menu: NSMenu, history: [HistoryEntry], controller: StatusBarController, actionTarget: HistoryActionTarget) {
+        self.controller = controller
+        self.actionTarget = actionTarget
+        self.allHistory = history
+        self.historyMenu = menu
+        menu.removeAllItems()
+
+        // Search field
+        let searchView = MenuSearchFieldView(width: 300)
+        searchView.searchField.placeholderString = "Search history…"
+        searchView.searchField.delegate = self
+        searchView.searchField.target = self
+        searchView.searchField.action = #selector(searchChanged(_:))
+        let searchItem = NSMenuItem()
+        searchItem.view = searchView
+        menu.addItem(searchItem)
+        menu.addItem(.separator())
+
+        addHistoryEntries(to: menu, entries: Array(history.prefix(20)))
+    }
+
+    private func addHistoryEntries(to menu: NSMenu, entries: [(Int, HistoryEntry)]) {
+        let now = Date().timeIntervalSince1970
+        for (origIndex, entry) in entries {
+            let dirName = URL(fileURLWithPath: entry.directory).lastPathComponent
+            let ago = formatDuration(now - entry.endedAt)
+            let label: String
+            if let dn = entry.displayName, !dn.isEmpty {
+                label = "\(entry.symbol) · \(dn) (\(ago) ago)"
+            } else {
+                label = "\(entry.symbol) · \(dirName) (\(ago) ago)"
+            }
+            let hItem = NSMenuItem(title: label, action: nil, keyEquivalent: "")
+
+            let hSub = NSMenu()
+
+            // Header: directory + duration
+            let duration = entry.endedAt - entry.startedAt
+            let headerItem = NSMenuItem(title: "📁 \(dirName)  ·  ⏱ \(formatDuration(duration))", action: nil, keyEquivalent: "")
+            headerItem.isEnabled = false
+            hSub.addItem(headerItem)
+            hSub.addItem(.separator())
+
+            // Prompt timeline (what you asked, in order)
+            let timeline = entry.promptTimeline ?? []
+            if !timeline.isEmpty {
+                let timelineLabel = NSMenuItem(title: "Conversation:", action: nil, keyEquivalent: "")
+                timelineLabel.isEnabled = false
+                hSub.addItem(timelineLabel)
+                for (i, prompt) in timeline.enumerated() {
+                    let text = prompt.count > 55 ? String(prompt.prefix(52)) + "…" : prompt
+                    let item = NSMenuItem(title: "  \(i + 1). \(text)", action: nil, keyEquivalent: "")
+                    item.isEnabled = false
+                    hSub.addItem(item)
+                }
+            } else {
+                // Fallback for old entries: show summary + lastMessage
+                let summaryText = entry.summary.count > 60 ? String(entry.summary.prefix(57)) + "…" : entry.summary
+                let summaryItem = NSMenuItem(title: "💬 \(summaryText)", action: nil, keyEquivalent: "")
+                summaryItem.isEnabled = false
+                hSub.addItem(summaryItem)
+
+                if let msg = entry.lastMessage, !msg.isEmpty {
+                    let clean = msg
+                        .replacingOccurrences(of: #"#{1,6}\s*"#, with: "", options: .regularExpression)
+                        .replacingOccurrences(of: #"\*{1,2}([^*]+)\*{1,2}"#, with: "$1", options: .regularExpression)
+                        .replacingOccurrences(of: #"`([^`]+)`"#, with: "$1", options: .regularExpression)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    let firstLine = clean.components(separatedBy: .newlines)
+                        .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) ?? clean
+                    let text = firstLine.count > 60 ? String(firstLine.prefix(57)) + "…" : firstLine
+                    let item = NSMenuItem(title: "🤖 \(text)", action: nil, keyEquivalent: "")
+                    item.isEnabled = false
+                    hSub.addItem(item)
+                }
+            }
+
+            // Keywords (click to copy)
+            let kw = entry.keywords ?? []
+            if !kw.isEmpty {
+                hSub.addItem(.separator())
+                let kwText = kw.prefix(10).joined(separator: ", ")
+                let kwLabel = kw.count > 10 ? "\(kwText) +\(kw.count - 10) more" : kwText
+                let kwItem = NSMenuItem(title: "🏷 \(kwLabel)", action: #selector(HistoryActionTarget.copyKeywords(_:)), keyEquivalent: "")
+                kwItem.target = actionTarget
+                kwItem.representedObject = kw
+                kwItem.toolTip = kw.joined(separator: ", ")
+                hSub.addItem(kwItem)
+            }
+
+            hSub.addItem(.separator())
+
+            let resumeInfo = ["directory": entry.directory, "sessionId": entry.sessionId] as [String: Any]
+            let resumeItem = NSMenuItem(title: "Resume", action: nil, keyEquivalent: "")
+            let resumeSub = NSMenu()
+
+            let normalItem = NSMenuItem(title: "Resume Session", action: #selector(HistoryActionTarget.resumeSession(_:)), keyEquivalent: "")
+            normalItem.target = actionTarget
+            normalItem.representedObject = resumeInfo
+            resumeSub.addItem(normalItem)
+
+            let dangerItem = NSMenuItem(title: "Resume (Skip Perms)", action: #selector(HistoryActionTarget.resumeSessionDangerous(_:)), keyEquivalent: "")
+            dangerItem.target = actionTarget
+            dangerItem.representedObject = resumeInfo
+            resumeSub.addItem(dangerItem)
+
+            resumeSub.addItem(.separator())
+
+            let copyItem = NSMenuItem(title: "Copy Resume Command", action: #selector(HistoryActionTarget.copyResumeCommand(_:)), keyEquivalent: "")
+            copyItem.target = actionTarget
+            copyItem.representedObject = resumeInfo
+            resumeSub.addItem(copyItem)
+
+            resumeItem.submenu = resumeSub
+            hSub.addItem(resumeItem)
+
+            let deleteItem = NSMenuItem(title: "Delete", action: #selector(HistoryActionTarget.deleteHistoryEntry(_:)), keyEquivalent: "")
+            deleteItem.target = actionTarget
+            deleteItem.tag = origIndex
+            hSub.addItem(deleteItem)
+
+            hItem.submenu = hSub
+            menu.addItem(hItem)
+        }
+
+        menu.addItem(.separator())
+        let clearItem = NSMenuItem(title: "Clear History", action: #selector(HistoryActionTarget.clearHistory(_:)), keyEquivalent: "")
+        clearItem.target = actionTarget
+        menu.addItem(clearItem)
+    }
+
+    private func addHistoryEntries(to menu: NSMenu, entries: [HistoryEntry]) {
+        addHistoryEntries(to: menu, entries: entries.enumerated().map { ($0.offset, $0.element) })
+    }
+
+    @objc private func searchChanged(_ sender: NSSearchField) {
+        guard let menu = historyMenu else { return }
+        // Remove all items after the search field + separator
+        while menu.items.count > 2 {
+            menu.removeItem(at: 2)
+        }
+
+        let query = sender.stringValue.trimmingCharacters(in: .whitespaces).lowercased()
+        if query.isEmpty {
+            addHistoryEntries(to: menu, entries: Array(allHistory.prefix(20)))
+            return
+        }
+
+        // Filter: match against displayName, summary, lastMessage, keywords, directory
+        var matched: [(Int, HistoryEntry)] = []
+        for (index, entry) in allHistory.enumerated() {
+            let haystack = [
+                entry.displayName,
+                entry.summary,
+                entry.lastMessage,
+                URL(fileURLWithPath: entry.directory).lastPathComponent,
+            ].compactMap { $0?.lowercased() }
+            let keywordMatch = entry.keywords?.contains { $0.lowercased().contains(query) } ?? false
+            if keywordMatch || haystack.contains(where: { $0.contains(query) }) {
+                matched.append((index, entry))
+            }
+            if matched.count >= 20 { break }
+        }
+
+        if matched.isEmpty {
+            let noMatch = NSMenuItem(title: "No matches", action: nil, keyEquivalent: "")
+            noMatch.isEnabled = false
+            menu.addItem(noMatch)
+            menu.addItem(.separator())
+            let clearItem = NSMenuItem(title: "Clear History", action: #selector(StatusBarController.clearHistory), keyEquivalent: "")
+            clearItem.target = controller
+            menu.addItem(clearItem)
+        } else {
+            addHistoryEntries(to: menu, entries: matched)
+        }
+    }
+
+    nonisolated func menuWillOpen(_ menu: NSMenu) {
+        // Keep search field focused when submenu opens
     }
 }
 

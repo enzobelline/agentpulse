@@ -15,6 +15,9 @@ public struct Session: Codable {
     public var activity: String?
     public var tty: String?
     public var lastMessage: String?
+    public var displayName: String?
+    public var keywords: [String]?
+    public var promptTimeline: [String]?
 
     public enum CodingKeys: String, CodingKey {
         case directory
@@ -29,9 +32,12 @@ public struct Session: Codable {
         case activity
         case tty
         case lastMessage = "last_message"
+        case displayName = "display_name"
+        case keywords
+        case promptTimeline = "prompt_timeline"
     }
 
-    public init(directory: String? = nil, name: String, status: String, updatedAt: TimeInterval, startedAt: TimeInterval? = nil, summary: String? = nil, sequenceNum: Int? = nil, pid: Int? = nil, symbol: String? = nil, activity: String? = nil, tty: String? = nil, lastMessage: String? = nil) {
+    public init(directory: String? = nil, name: String, status: String, updatedAt: TimeInterval, startedAt: TimeInterval? = nil, summary: String? = nil, sequenceNum: Int? = nil, pid: Int? = nil, symbol: String? = nil, activity: String? = nil, tty: String? = nil, lastMessage: String? = nil, displayName: String? = nil, keywords: [String]? = nil) {
         self.directory = directory
         self.name = name
         self.status = status
@@ -44,10 +50,13 @@ public struct Session: Codable {
         self.activity = activity
         self.tty = tty
         self.lastMessage = lastMessage
+        self.displayName = displayName
+        self.keywords = keywords
     }
 }
 
 public struct Settings: Codable {
+
     public var soundEnabled: Bool
     public var notificationsEnabled: Bool
     public var waitingSound: String
@@ -143,6 +152,9 @@ public struct HistoryEntry: Codable, Equatable {
     public var startedAt: TimeInterval
     public var endedAt: TimeInterval
     public var lastMessage: String?
+    public var displayName: String?
+    public var keywords: [String]?
+    public var promptTimeline: [String]?
 
     public enum CodingKeys: String, CodingKey {
         case symbol, directory, summary
@@ -150,9 +162,12 @@ public struct HistoryEntry: Codable, Equatable {
         case startedAt = "started_at"
         case endedAt = "ended_at"
         case lastMessage = "last_message"
+        case displayName = "display_name"
+        case keywords
+        case promptTimeline = "prompt_timeline"
     }
 
-    public init(symbol: String, directory: String, summary: String, sessionId: String, startedAt: TimeInterval, endedAt: TimeInterval, lastMessage: String? = nil) {
+    public init(symbol: String, directory: String, summary: String, sessionId: String, startedAt: TimeInterval, endedAt: TimeInterval, lastMessage: String? = nil, displayName: String? = nil, keywords: [String]? = nil, promptTimeline: [String]? = nil) {
         self.symbol = symbol
         self.directory = directory
         self.summary = summary
@@ -160,5 +175,8 @@ public struct HistoryEntry: Codable, Equatable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.lastMessage = lastMessage
+        self.displayName = displayName
+        self.keywords = keywords
+        self.promptTimeline = promptTimeline
     }
 }

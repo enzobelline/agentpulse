@@ -4,6 +4,7 @@
 import fcntl
 import json
 import os
+import re
 import sys
 import time
 
@@ -154,6 +155,15 @@ def record_to_history(session, session_key, now):
     last_msg = session.get("last_message")
     if last_msg:
         entry["last_message"] = last_msg
+    display_name = session.get("display_name")
+    if display_name:
+        entry["display_name"] = display_name
+    keywords = session.get("keywords")
+    if keywords:
+        entry["keywords"] = keywords
+    timeline = session.get("prompt_timeline")
+    if timeline:
+        entry["prompt_timeline"] = timeline
     # Read existing history
     history = []
     if os.path.exists(HISTORY_FILE):
@@ -162,9 +172,8 @@ def record_to_history(session, session_key, now):
                 history = json.load(f)
         except (json.JSONDecodeError, IOError):
             pass
-    # Dedup: skip if session_id already in history
-    if any(h.get("session_id") == session_key for h in history):
-        return
+    # Dedup: replace existing entry with updated data (latest wins)
+    history = [h for h in history if h.get("session_id") != session_key]
     # Prepend and cap
     history = [entry] + history
     if len(history) > MAX_HISTORY:
@@ -218,6 +227,88 @@ def extract_activity(stdin_data):
     elif tool_name:
         return f"Using {tool_name}…"
     return None
+
+
+_STOP_WORDS = frozenset(
+    "a an the and or but in on at to for of is it be do we i my me you your "
+    "this that with from by not so if can could would should have has had was "
+    "were are been will shall may let its our us them they he she his her "
+    "just also now then here there how what when where why which who all any "
+    "some no yes up out into about over after before between through during "
+    "please make sure check get set run use add update fix change create new "
+    # Common filler / conversational words
+    "like look looks looking need dont didnt does even still "
+    "really want think know keep tell lets maybe something nothing "
+    "good better more less back down again much many since "
+    "show showing open opens close left right both being "
+    "coming going find stuff things thing made point around "
+    "help helpful actually also already another been could "
+    "going take tell them then these those very well what "
+    "will with would about after being come each give given "
+    "however only other such than that their them most".split()
+)
+
+
+def extract_keywords(stdin_data, existing_keywords=None):
+    """Extract keywords from hook payload data. Returns updated keyword list."""
+    import re
+    keywords = set(existing_keywords or [])
+    hook_event = stdin_data.get("hook_event_name", "")
+
+    # From PostToolUse: file names, search patterns, bash subjects
+    if hook_event == "PostToolUse":
+        tool_input = stdin_data.get("tool_input", {})
+
+        # Extract file names from file paths
+        for field in ("file_path", "path"):
+            path = tool_input.get(field, "")
+            if path:
+                fname = os.path.basename(path)
+                if fname:
+                    keywords.add(fname)
+                    # Also add name without extension
+                    stem = os.path.splitext(fname)[0]
+                    if stem and stem != fname:
+                        keywords.add(stem)
+
+        # Extract search patterns (what you grepped/globbed for)
+        # Skip very short or pure-regex patterns
+        pattern = tool_input.get("pattern", "")
+        if pattern and 3 < len(pattern) < 40 and re.search(r'[a-zA-Z]{3,}', pattern):
+            keywords.add(pattern)
+
+        # Extract meaningful bash commands (skip generic ones)
+        _SKIP_CMDS = frozenset("ls cd cat echo rm mkdir cp mv touch head tail wc".split())
+        cmd = tool_input.get("command", "")
+        if cmd:
+            first_word = cmd.strip().split()[0] if cmd.strip() else ""
+            if first_word and len(first_word) < 20 and first_word not in _SKIP_CMDS:
+                keywords.add(first_word)
+
+    # From UserPromptSubmit: key words from prompt (5+ chars, strict filtering)
+    if hook_event == "UserPromptSubmit":
+        prompt = stdin_data.get("prompt", "")
+        if prompt:
+            words = re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', prompt)
+            for w in words:
+                lower = w.lower()
+                if len(lower) < 5 or lower in _STOP_WORDS:
+                    continue
+                # Skip session IDs (session_xxx) and hex-like strings
+                if lower.startswith("session_") or re.match(r'^[0-9a-f]{6,}$', lower):
+                    continue
+                # Skip if it looks like a typo: all lowercase, no underscores,
+                # and not a known code-like pattern (contains _ or has mixed case in original)
+                # Keep: camelCase, snake_case, file-like words
+                has_structure = '_' in w or any(c.isupper() for c in w[1:]) or '.' in w
+                # Always keep words 7+ chars (likely intentional), structured words,
+                # or words that appear code-like
+                if not has_structure and len(lower) < 7:
+                    continue
+                keywords.add(lower)
+
+    # Cap at 200 keywords
+    return sorted(keywords)[:200]
 
 
 def _strip_preamble(text):
@@ -315,6 +406,14 @@ def extract_prompt_summary(stdin_data):
     if not prompt:
         return None
 
+    # Strip XML-like tags (sub-agent task metadata)
+    prompt = re.sub(r'<[^>]+>', '', prompt).strip()
+
+    # Strip task IDs, tool use IDs, and hex-like tokens left after tag removal
+    prompt = re.sub(r'\b(toolu_|task-id|tool-use-id)\S*\b', '', prompt)
+    prompt = re.sub(r'\b[a-f0-9]{12,}\b', '', prompt)
+    prompt = re.sub(r'\s{2,}', ' ', prompt).strip()
+
     # Strip preamble to get to the action
     prompt = _strip_preamble(prompt)
 
@@ -409,8 +508,11 @@ def update_status(status, summary=None, stdin_data=None):
                 release_symbol(data, session_key)
             else:
                 session = sessions.get(session_key, {})
-                session["directory"] = cwd
-                session["name"] = name
+                # Don't let agent worktree paths overwrite the real directory
+                # (Claude Code Agent tool shares session ID with parent)
+                if "directory" not in session or "/.claude/worktrees/agent-" not in cwd:
+                    session["directory"] = cwd
+                    session["name"] = name
                 session["status"] = status
                 session["updated_at"] = time.time()
                 session["pid"] = pid
@@ -425,6 +527,9 @@ def update_status(status, summary=None, stdin_data=None):
                 if "symbol" not in session:
                     session["symbol"] = assign_symbol(data, session_key)
 
+                # Keyword extraction
+                session["keywords"] = extract_keywords(stdin_data, session.get("keywords"))
+
                 # Activity capture from PostToolUse
                 activity = extract_activity(stdin_data)
                 if activity:
@@ -435,9 +540,9 @@ def update_status(status, summary=None, stdin_data=None):
                 # Last assistant message capture from Stop
                 last_msg = stdin_data.get("last_assistant_message")
                 if last_msg and isinstance(last_msg, str):
-                    # Truncate to ~200 chars for storage
-                    if len(last_msg) > 200:
-                        last_msg = last_msg[:200].rsplit(" ", 1)[0] + "…"
+                    # Truncate to ~500 chars for storage
+                    if len(last_msg) > 500:
+                        last_msg = last_msg[:500].rsplit(" ", 1)[0] + "…"
                     session["last_message"] = last_msg
 
                 # Prompt capture from UserPromptSubmit
@@ -445,6 +550,10 @@ def update_status(status, summary=None, stdin_data=None):
                 if prompt_summary:
                     session["summary"] = prompt_summary
                     session.pop("activity", None)  # Clear activity on new prompt
+                    # Accumulate prompt timeline (last 20 prompts)
+                    timeline = session.get("prompt_timeline", [])
+                    timeline.append(prompt_summary)
+                    session["prompt_timeline"] = timeline[-20:]
                 elif summary:
                     session["summary"] = summary
                 elif "summary" not in session or session.get("summary") in (
@@ -477,6 +586,15 @@ def update_status(status, summary=None, stdin_data=None):
                     lm = session.get("last_message")
                     if lm:
                         shadow_fields["last_message"] = lm
+                    dn = session.get("display_name")
+                    if dn:
+                        shadow_fields["display_name"] = dn
+                    kw = session.get("keywords")
+                    if kw:
+                        shadow_fields["keywords"] = kw
+                    pt = session.get("prompt_timeline")
+                    if pt:
+                        shadow_fields["prompt_timeline"] = pt
                     update_shadow(session_key, shadow_fields)
 
             data["sessions"] = sessions
