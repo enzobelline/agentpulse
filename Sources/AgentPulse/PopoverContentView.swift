@@ -11,6 +11,8 @@ struct PopoverContentView: View {
     var store: SessionStore
     @State private var actions: SessionActions?
     @State private var selectedTab: PopoverTab = .sessions
+    @State private var spinnerIdx = 0
+    private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -18,37 +20,49 @@ struct PopoverContentView: View {
             HStack(spacing: 0) {
                 ForEach(PopoverTab.allCases, id: \.self) { tab in
                     Button {
-                        selectedTab = tab
+                        withAnimation(.interactiveSpring(response: 0.35, dampingFraction: 0.8)) {
+                            selectedTab = tab
+                        }
                     } label: {
                         Text(tabLabel(tab))
                             .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
                             .foregroundStyle(selectedTab == tab ? .primary : .secondary)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 8)
-                            .background(selectedTab == tab ? Color.primary.opacity(0.08) : Color.clear)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(selectedTab == tab ? Color.primary.opacity(0.08) : Color.clear)
+                            )
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(.horizontal, 8)
-            .padding(.top, 4)
+            .padding(.top, 6)
+            .padding(.bottom, 2)
 
             Divider()
 
             // Content
-            switch selectedTab {
-            case .sessions:
-                sessionsContent
-            case .history:
-                if let actions {
-                    HistoryView(actions: actions)
+            Group {
+                switch selectedTab {
+                case .sessions:
+                    sessionsContent
+                case .history:
+                    if let actions {
+                        HistoryView(actions: actions)
+                    }
+                case .settings:
+                    SettingsView(store: store)
                 }
-            case .settings:
-                SettingsView(store: store)
             }
+            .transition(.opacity.animation(.easeInOut(duration: 0.15)))
         }
         .frame(width: 420, height: 440)
+        .onReceive(timer) { _ in
+            spinnerIdx = (spinnerIdx + 1) % Constants.spinnerFrames.count
+        }
         .onAppear {
             if actions == nil {
                 actions = SessionActions(store: store)
@@ -87,7 +101,7 @@ struct PopoverContentView: View {
                         )
                         ForEach(sorted, id: \.key) { key, session in
                             if let actions {
-                                SessionRowView(key: key, session: session, actions: actions)
+                                SessionRowView(key: key, session: session, actions: actions, spinnerIdx: spinnerIdx)
                             }
                         }
                     }
@@ -124,17 +138,23 @@ struct SessionRowView: View {
     let key: String
     let session: Session
     let actions: SessionActions
+    var spinnerIdx: Int = 0
 
     @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 8) {
+            // Status indicator dot
+            Circle()
+                .fill(statusColor)
+                .frame(width: 8, height: 8)
+
             Text(statusIcon)
-                .font(.system(size: 14, design: .monospaced))
-                .frame(width: 20)
+                .font(.system(size: 13, design: .monospaced))
+                .frame(width: 18)
 
             Text(AgentPulseLib.displaySymbol(for: session))
-                .font(.system(size: 14))
+                .font(.system(size: 13))
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -171,6 +191,7 @@ struct SessionRowView: View {
         .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
         .onHover { isHovered = $0 }
+        .opacity(session.status == "done" ? 0.6 : 1.0)
         .onTapGesture {
             actions.goToTerminal(key: key)
         }
@@ -219,10 +240,19 @@ struct SessionRowView: View {
 
     private var statusIcon: String {
         switch session.status {
-        case "running": return "◐"
-        case "waiting": return "⏸"
-        case "done":    return "✓"
-        default:        return "○"
+        case "running": return Constants.spinnerFrames[spinnerIdx % Constants.spinnerFrames.count]
+        case "waiting": return Constants.iconWaiting
+        case "done":    return Constants.iconDone
+        default:        return Constants.iconSleeping
+        }
+    }
+
+    private var statusColor: Color {
+        switch session.status {
+        case "running": return .green
+        case "waiting": return .orange
+        case "done":    return .gray
+        default:        return .gray.opacity(0.5)
         }
     }
 
