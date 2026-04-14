@@ -1,27 +1,75 @@
 import SwiftUI
 import AgentPulseLib
 
+enum PopoverTab: String, CaseIterable {
+    case sessions = "Sessions"
+    case history = "History"
+    case settings = "Settings"
+}
+
 struct PopoverContentView: View {
     var store: SessionStore
     @State private var actions: SessionActions?
+    @State private var selectedTab: PopoverTab = .sessions
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            HStack {
-                Text("AgentPulse")
-                    .font(.headline)
-                Spacer()
-                Text("\(store.sessions.count) sessions")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        VStack(spacing: 0) {
+            // Tab bar
+            HStack(spacing: 0) {
+                ForEach(PopoverTab.allCases, id: \.self) { tab in
+                    Button {
+                        selectedTab = tab
+                    } label: {
+                        Text(tabLabel(tab))
+                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
+                            .foregroundStyle(selectedTab == tab ? .primary : .secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .background(selectedTab == tab ? Color.primary.opacity(0.08) : Color.clear)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
 
             Divider()
 
+            // Content
+            switch selectedTab {
+            case .sessions:
+                sessionsContent
+            case .history:
+                if let actions {
+                    HistoryView(actions: actions)
+                }
+            case .settings:
+                SettingsView(store: store)
+            }
+        }
+        .frame(width: 420, height: 440)
+        .onAppear {
+            if actions == nil {
+                actions = SessionActions(store: store)
+            }
+        }
+    }
+
+    // MARK: - Tab Labels
+
+    private func tabLabel(_ tab: PopoverTab) -> String {
+        switch tab {
+        case .sessions: return "Sessions (\(store.sessions.count))"
+        case .history: return "History"
+        case .settings: return "Settings"
+        }
+    }
+
+    // MARK: - Sessions Tab
+
+    private var sessionsContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
             if store.sessions.isEmpty {
                 VStack {
                     Spacer()
@@ -29,7 +77,7 @@ struct PopoverContentView: View {
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
@@ -57,16 +105,15 @@ struct PopoverContentView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .font(.caption)
+
                 Spacer()
+
+                Text("⌃⌥A")
+                    .font(.caption2)
+                    .foregroundStyle(.quaternary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-        }
-        .frame(width: 420, height: 400)
-        .onAppear {
-            if actions == nil {
-                actions = SessionActions(store: store)
-            }
         }
     }
 }
@@ -123,9 +170,7 @@ struct SessionRowView: View {
         .padding(.vertical, 6)
         .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
-        .onHover { hovering in
-            isHovered = hovering
-        }
+        .onHover { isHovered = $0 }
         .onTapGesture {
             actions.goToTerminal(key: key)
         }
@@ -170,8 +215,6 @@ struct SessionRowView: View {
                 actions.dismissSession(key: key)
             }
         }
-
-        // Computed properties
     }
 
     private var statusIcon: String {
