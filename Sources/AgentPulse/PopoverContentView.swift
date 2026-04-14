@@ -9,9 +9,11 @@ enum PopoverTab: String, CaseIterable {
 
 struct PopoverContentView: View {
     var store: SessionStore
+    var dismiss: (() -> Void)?
     @State private var actions: SessionActions?
     @State private var selectedTab: PopoverTab = .sessions
     @State private var spinnerIdx = 0
+    @State private var tick = 0  // drives live timestamp updates
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -51,7 +53,7 @@ struct PopoverContentView: View {
                     sessionsContent
                 case .history:
                     if let actions {
-                        HistoryView(actions: actions)
+                        HistoryView(actions: actions, dismiss: dismiss)
                     }
                 case .settings:
                     SettingsView(store: store)
@@ -62,6 +64,7 @@ struct PopoverContentView: View {
         .frame(width: 400, height: 350)
         .onReceive(timer) { _ in
             spinnerIdx = (spinnerIdx + 1) % Constants.spinnerFrames.count
+            tick += 1
         }
         .onAppear {
             if actions == nil {
@@ -123,7 +126,9 @@ struct PopoverContentView: View {
                                         session: session,
                                         actions: actions,
                                         spinnerIdx: spinnerIdx,
-                                        isPinned: store.settings.pinnedSessions.contains(key)
+                                        isPinned: store.settings.pinnedSessions.contains(key),
+                                        tick: tick,
+                                        dismiss: dismiss
                                     )
                                     Divider().padding(.horizontal, 16).opacity(0.5)
                                 }
@@ -147,7 +152,6 @@ struct PopoverContentView: View {
 
                 Spacer()
 
-                // Status summary
                 let counts = statusCounts
                 if counts.running > 0 {
                     Text("\(counts.running) running")
@@ -218,6 +222,8 @@ struct SessionRowView: View {
     let actions: SessionActions
     var spinnerIdx: Int = 0
     var isPinned: Bool = false
+    var tick: Int = 0  // triggers duration recalculation
+    var dismiss: (() -> Void)?
 
     @State private var isHovered = false
 
@@ -232,9 +238,9 @@ struct SessionRowView: View {
                 .font(.system(size: 13, design: .monospaced))
                 .frame(width: 18)
 
-            Text(AgentPulseLib.displaySymbol(for: session))
+            // Symbol + worktree lineage
+            Text(symbolDisplay)
                 .font(.system(size: 13))
-                .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
@@ -249,9 +255,11 @@ struct SessionRowView: View {
                 }
 
                 HStack(spacing: 6) {
-                    Text(directoryName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    if !hasLineage {
+                        Text(directoryName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
 
                     if let activity = AgentPulseLib.displayActivity(for: session),
                        session.status == "running" {
@@ -265,8 +273,8 @@ struct SessionRowView: View {
 
             Spacer()
 
-            if !duration.isEmpty {
-                Text(duration)
+            if !liveDuration.isEmpty {
+                Text(liveDuration)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
@@ -286,10 +294,12 @@ struct SessionRowView: View {
         }
         .opacity(session.status == "done" ? 0.6 : 1.0)
         .onTapGesture {
+            dismiss?()
             actions.goToTerminal(key: key)
         }
         .contextMenu {
             Button("Go to Terminal") {
+                dismiss?()
                 actions.goToTerminal(key: key)
             }
 
@@ -349,6 +359,21 @@ struct SessionRowView: View {
         }
     }
 
+    // Worktree lineage: "◆ falcon → myrepo" or just "◆"
+    private var symbolDisplay: String {
+        let dirName = URL(fileURLWithPath: session.directory ?? session.name).lastPathComponent
+        let symbol = AgentPulseLib.displaySymbol(for: session)
+        if let lineage = AgentPulseLib.worktreeLineage(directoryName: dirName) {
+            return "\(symbol) \(lineage.word) → \(lineage.repo)"
+        }
+        return symbol
+    }
+
+    private var hasLineage: Bool {
+        let dirName = URL(fileURLWithPath: session.directory ?? session.name).lastPathComponent
+        return AgentPulseLib.worktreeLineage(directoryName: dirName) != nil
+    }
+
     private var summaryText: String {
         if let name = session.displayName, !name.isEmpty {
             let summary = AgentPulseLib.displaySummary(for: session)
@@ -361,7 +386,9 @@ struct SessionRowView: View {
         URL(fileURLWithPath: session.directory ?? session.name).lastPathComponent
     }
 
-    private var duration: String {
+    // Live-updating duration — `tick` dependency forces recalculation every second
+    private var liveDuration: String {
+        _ = tick
         let now = Date().timeIntervalSince1970
         guard session.updatedAt > 0 else { return "" }
         let seconds = now - session.updatedAt

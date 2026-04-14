@@ -3,6 +3,7 @@ import AgentPulseLib
 
 struct HistoryView: View {
     let actions: SessionActions
+    var dismiss: (() -> Void)?
     @State private var searchText = ""
     @State private var entries: [HistoryEntry] = []
     @State private var expandedId: String?
@@ -46,6 +47,7 @@ struct HistoryView: View {
                                 entry: entry,
                                 isExpanded: expandedId == entry.sessionId,
                                 actions: actions,
+                                dismiss: dismiss,
                                 onToggle: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         expandedId = expandedId == entry.sessionId ? nil : entry.sessionId
@@ -86,6 +88,7 @@ struct HistoryRowView: View {
     let entry: HistoryEntry
     let isExpanded: Bool
     let actions: SessionActions
+    var dismiss: (() -> Void)?
     let onToggle: () -> Void
     let onDelete: () -> Void
     @State private var isHovered = false
@@ -131,6 +134,10 @@ struct HistoryRowView: View {
             .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
             .contentShape(Rectangle())
             .onHover { isHovered = $0 }
+            .onTapGesture(count: 2) {
+                dismiss?()
+                actions.resumeSession(directory: entry.directory, sessionId: entry.sessionId)
+            }
             .onTapGesture { onToggle() }
 
             // Expanded: prompt timeline
