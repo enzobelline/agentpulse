@@ -3,6 +3,7 @@ import AgentPulseLib
 
 struct PopoverContentView: View {
     var store: SessionStore
+    @State private var actions: SessionActions?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -37,7 +38,9 @@ struct PopoverContentView: View {
                             pinnedSessions: store.settings.pinnedSessions
                         )
                         ForEach(sorted, id: \.key) { key, session in
-                            SessionRowView(key: key, session: session)
+                            if let actions {
+                                SessionRowView(key: key, session: session, actions: actions)
+                            }
                         }
                     }
                     .padding(.vertical, 4)
@@ -60,6 +63,11 @@ struct PopoverContentView: View {
             .padding(.vertical, 8)
         }
         .frame(width: 420, height: 400)
+        .onAppear {
+            if actions == nil {
+                actions = SessionActions(store: store)
+            }
+        }
     }
 }
 
@@ -68,6 +76,9 @@ struct PopoverContentView: View {
 struct SessionRowView: View {
     let key: String
     let session: Session
+    let actions: SessionActions
+
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -110,7 +121,57 @@ struct SessionRowView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
+        .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .onTapGesture {
+            actions.goToTerminal(key: key)
+        }
+        .contextMenu {
+            Button("Go to Terminal") {
+                actions.goToTerminal(key: key)
+            }
+
+            Divider()
+
+            Button(actions.isPinned(key: key) ? "Unpin" : "Pin") {
+                actions.togglePin(key: key)
+            }
+
+            Button("Rename") {
+                actions.renameSession(key: key)
+            }
+
+            Divider()
+
+            Button("Open New Session") {
+                actions.openNewSession(directory: session.directory ?? session.name)
+            }
+
+            Button("Create New Worktree") {
+                actions.createWorktree(directory: session.directory ?? session.name)
+            }
+
+            Divider()
+
+            Button("Copy Session ID") {
+                actions.copySessionId(key: key)
+            }
+
+            Button("Copy Path") {
+                actions.copyPath(key: key)
+            }
+
+            Divider()
+
+            Button("Dismiss") {
+                actions.dismissSession(key: key)
+            }
+        }
+
+        // Computed properties
     }
 
     private var statusIcon: String {
