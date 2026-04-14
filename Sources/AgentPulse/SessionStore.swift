@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import AgentPulseLib
 
 // MARK: - Delegate
@@ -11,6 +12,7 @@ protocol SessionStoreDelegate: AnyObject {
 // MARK: - SessionStore
 
 @MainActor
+@Observable
 final class SessionStore {
     private(set) var sessions: [String: Session] = [:]
     var settings = Settings()
