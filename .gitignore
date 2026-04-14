@@ -1,0 +1,12 @@
+.build/
+.swiftpm/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+.DS_Store
+.claude/
+test_latency.sh
+*.jsonl
+.planning/
+/AgentPulse
+/AgentPulse.app/

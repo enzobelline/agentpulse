@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-and-release:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build universal binary (arm64 + x86_64)
+        run: |
+          swift build -c release --arch arm64 --arch x86_64
+          cp .build/apple/Products/Release/AgentPulse AgentPulse
+          chmod +x AgentPulse
+
+      - name: Verify binary
+        run: |
+          file AgentPulse
+          ./AgentPulse --help 2>&1 || true
+
+      - name: Create tarball
+        run: |
+          tar czf agentpulse-${{ github.ref_name }}-macos-universal.tar.gz \
+            AgentPulse install.sh uninstall.sh update_status.py run_update_status.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: agentpulse-${{ github.ref_name }}-macos-universal.tar.gz
