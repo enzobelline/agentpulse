@@ -5,17 +5,19 @@ struct HistoryView: View {
     let actions: SessionActions
     @State private var searchText = ""
     @State private var entries: [HistoryEntry] = []
+    @State private var expandedId: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("History")
-                    .font(.headline)
-                Spacer()
+                TextField("Search history...", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.small)
+                Spacer(minLength: 8)
                 Text("\(entries.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Clear All") {
+                Button("Clear") {
                     SessionHistory.shared.clearAll()
                     entries = []
                 }
@@ -24,75 +26,94 @@ struct HistoryView: View {
                 .foregroundStyle(.red.opacity(0.8))
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
-
-            // Search
-            TextField("Search history...", text: $searchText)
-                .textFieldStyle(.roundedBorder)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+            .padding(.vertical, 8)
 
             Divider()
 
             if filtered.isEmpty {
-                VStack {
+                VStack(spacing: 8) {
                     Spacer()
-                    Text(entries.isEmpty ? "No history" : "No matches")
+                    Text(entries.isEmpty ? "No history yet" : "No matches")
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(filtered.enumerated()), id: \.offset) { idx, entry in
-                            HistoryRowView(entry: entry, index: idx, actions: actions, onDelete: {
-                                // Find original index for deletion
-                                if let origIdx = entries.firstIndex(where: { $0.sessionId == entry.sessionId }) {
-                                    SessionHistory.shared.removeEntry(at: origIdx)
-                                    entries = SessionHistory.shared.load()
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(filtered, id: \.sessionId) { entry in
+                            HistoryRowView(
+                                entry: entry,
+                                isExpanded: expandedId == entry.sessionId,
+                                actions: actions,
+                                onToggle: {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        expandedId = expandedId == entry.sessionId ? nil : entry.sessionId
+                                    }
+                                },
+                                onDelete: {
+                                    if let idx = entries.firstIndex(where: { $0.sessionId == entry.sessionId }) {
+                                        SessionHistory.shared.removeEntry(at: idx)
+                                        entries = SessionHistory.shared.load()
+                                    }
                                 }
-                            })
+                            )
+                            Divider().padding(.horizontal, 16).opacity(0.5)
                         }
                     }
                     .padding(.vertical, 4)
                 }
             }
         }
-        .frame(width: 420, height: 400)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { entries = SessionHistory.shared.load() }
     }
 
     private var filtered: [HistoryEntry] {
-        guard !searchText.isEmpty else { return Array(entries.prefix(30)) }
+        let source = Array(entries.prefix(50))
+        guard !searchText.isEmpty else { return source }
         let query = searchText.lowercased()
-        return entries.filter { entry in
+        return source.filter { entry in
             entry.summary.lowercased().contains(query) ||
             entry.directory.lowercased().contains(query) ||
             (entry.displayName?.lowercased().contains(query) ?? false) ||
             (entry.keywords?.contains(where: { $0.lowercased().contains(query) }) ?? false)
-        }.prefix(30).map { $0 }
+        }
     }
 }
 
 struct HistoryRowView: View {
     let entry: HistoryEntry
-    let index: Int
+    let isExpanded: Bool
     let actions: SessionActions
+    let onToggle: () -> Void
     let onDelete: () -> Void
     @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Main row
             HStack(spacing: 6) {
                 Text(entry.symbol)
                     .font(.system(size: 13))
                     .frame(width: 16)
 
-                Text(displayName)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(displayName)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(dirName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        if let kw = entry.keywords, !kw.isEmpty {
+                            Text(kw.prefix(3).joined(separator: ", "))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
 
                 Spacer()
 
@@ -100,26 +121,45 @@ struct HistoryRowView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(.quaternary)
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 6)
+            .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            .contentShape(Rectangle())
+            .onHover { isHovered = $0 }
+            .onTapGesture { onToggle() }
 
-            HStack(spacing: 6) {
-                Text(dirName)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                if let kw = entry.keywords, !kw.isEmpty {
-                    Text(kw.prefix(3).joined(separator: ", "))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+            // Expanded: prompt timeline
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    if let timeline = entry.promptTimeline, !timeline.isEmpty {
+                        ForEach(Array(timeline.enumerated()), id: \.offset) { idx, prompt in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text("\(idx + 1).")
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .frame(width: 16, alignment: .trailing)
+                                Text(prompt)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    } else {
+                        Text(entry.summary)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
+                .padding(.horizontal, 40)
+                .padding(.bottom, 8)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
-        .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
         .contextMenu {
             Button("Resume Session") {
                 actions.resumeSession(directory: entry.directory, sessionId: entry.sessionId)
@@ -131,13 +171,12 @@ struct HistoryRowView: View {
             Button("Copy Resume Command") {
                 actions.copyResumeCommand(directory: entry.directory, sessionId: entry.sessionId)
             }
-            Button("Copy Keywords") {
-                if let kw = entry.keywords {
+            if let kw = entry.keywords, !kw.isEmpty {
+                Button("Copy Keywords") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(kw.joined(separator: ", "), forType: .string)
                 }
             }
-            .disabled(entry.keywords?.isEmpty ?? true)
             Divider()
             Button("Delete") { onDelete() }
         }

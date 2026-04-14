@@ -59,7 +59,7 @@ struct PopoverContentView: View {
             }
             .transition(.opacity.animation(.easeInOut(duration: 0.15)))
         }
-        .frame(width: 420, height: 440)
+        .frame(width: 400, height: 350)
         .onReceive(timer) { _ in
             spinnerIdx = (spinnerIdx + 1) % Constants.spinnerFrames.count
         }
@@ -85,23 +85,48 @@ struct PopoverContentView: View {
     private var sessionsContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             if store.sessions.isEmpty {
-                VStack {
+                VStack(spacing: 8) {
                     Spacer()
+                    Text("○")
+                        .font(.system(size: 32))
+                        .foregroundStyle(.quaternary)
                     Text("No active sessions")
                         .foregroundStyle(.secondary)
+                    Text("Start a Claude Code session to see it here")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        let sorted = AgentPulseLib.sortedByPriority(
-                            store.sessions.map { $0 },
-                            pinnedSessions: store.settings.pinnedSessions
-                        )
-                        ForEach(sorted, id: \.key) { key, session in
-                            if let actions {
-                                SessionRowView(key: key, session: session, actions: actions, spinnerIdx: spinnerIdx)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        let grouped = groupedSessions
+                        ForEach(Array(grouped.enumerated()), id: \.offset) { groupIdx, group in
+                            // Group header
+                            if grouped.count > 1 {
+                                if groupIdx > 0 {
+                                    Divider().padding(.horizontal, 16).padding(.vertical, 4)
+                                }
+                                Text(URL(fileURLWithPath: group.directory).lastPathComponent)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, groupIdx == 0 ? 6 : 2)
+                                    .padding(.bottom, 2)
+                            }
+
+                            ForEach(group.items, id: \.key) { key, session in
+                                if let actions {
+                                    SessionRowView(
+                                        key: key,
+                                        session: session,
+                                        actions: actions,
+                                        spinnerIdx: spinnerIdx,
+                                        isPinned: store.settings.pinnedSessions.contains(key)
+                                    )
+                                    Divider().padding(.horizontal, 16).opacity(0.5)
+                                }
                             }
                         }
                     }
@@ -112,7 +137,7 @@ struct PopoverContentView: View {
             Divider()
 
             // Footer
-            HStack {
+            HStack(spacing: 4) {
                 Button("Quit") {
                     NSApplication.shared.terminate(nil)
                 }
@@ -122,13 +147,66 @@ struct PopoverContentView: View {
 
                 Spacer()
 
-                Text("⌃⌥A")
+                // Status summary
+                let counts = statusCounts
+                if counts.running > 0 {
+                    Text("\(counts.running) running")
+                        .font(.caption2)
+                        .foregroundStyle(.green)
+                }
+                if counts.waiting > 0 {
+                    Text("· \(counts.waiting) waiting")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+                if counts.done > 0 {
+                    Text("· \(counts.done) done")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text("  ⌃⌥A")
                     .font(.caption2)
                     .foregroundStyle(.quaternary)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
         }
+    }
+
+    // MARK: - Grouping
+
+    private var groupedSessions: [(directory: String, items: [(key: String, session: Session)])] {
+        let sorted = AgentPulseLib.sortedByPriority(
+            store.sessions.map { $0 },
+            pinnedSessions: store.settings.pinnedSessions
+        )
+        var groups: [(directory: String, items: [(key: String, session: Session)])] = []
+        var groupIndex: [String: Int] = [:]
+        for (key, session) in sorted {
+            let dir = session.directory ?? session.name
+            let gk = AgentPulseLib.groupKey(forDirectory: dir)
+            if let idx = groupIndex[gk] {
+                groups[idx].items.append((key: key, session: session))
+            } else {
+                groupIndex[gk] = groups.count
+                groups.append((directory: gk, items: [(key: key, session: session)]))
+            }
+        }
+        return groups
+    }
+
+    private var statusCounts: (running: Int, waiting: Int, done: Int) {
+        var r = 0, w = 0, d = 0
+        for s in store.sessions.values {
+            switch s.status {
+            case "running": r += 1
+            case "waiting": w += 1
+            case "done": d += 1
+            default: break
+            }
+        }
+        return (r, w, d)
     }
 }
 
@@ -139,6 +217,7 @@ struct SessionRowView: View {
     let session: Session
     let actions: SessionActions
     var spinnerIdx: Int = 0
+    var isPinned: Bool = false
 
     @State private var isHovered = false
 
@@ -158,9 +237,16 @@ struct SessionRowView: View {
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(summaryText)
-                    .font(.system(size: 13))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    if isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.orange)
+                    }
+                    Text(summaryText)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                }
 
                 HStack(spacing: 6) {
                     Text(directoryName)
@@ -190,7 +276,14 @@ struct SessionRowView: View {
         .padding(.vertical, 6)
         .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
         .contentShape(Rectangle())
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
         .opacity(session.status == "done" ? 0.6 : 1.0)
         .onTapGesture {
             actions.goToTerminal(key: key)
