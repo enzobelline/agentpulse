@@ -20,6 +20,26 @@ struct WorkspaceListView: View {
                 Text("\(workspaces.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if !workspaces.isEmpty {
+                    Button("Clear All") {
+                        let alert = NSAlert()
+                        alert.messageText = "Delete All Workspaces?"
+                        alert.informativeText = "This will remove all saved workspaces. This cannot be undone."
+                        alert.addButton(withTitle: "Delete All")
+                        alert.addButton(withTitle: "Cancel")
+                        alert.alertStyle = .warning
+                        if alert.runModal() == .alertFirstButtonReturn {
+                            for ws in workspaces {
+                                WorkspaceManager.shared.delete(id: ws.id)
+                            }
+                            workspaces = []
+                        }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.red.opacity(0.8))
+                    .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
