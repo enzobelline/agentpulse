@@ -7,6 +7,7 @@ struct WorkspaceSession: Codable {
     var sessionId: String
     var directory: String
     var displayName: String?
+    var promptTimeline: [String]?
 }
 
 struct WorkspaceSnapshot: Codable, Identifiable {
@@ -53,7 +54,8 @@ final class WorkspaceManager {
                 WorkspaceSession(
                     sessionId: key,
                     directory: session.directory ?? session.name,
-                    displayName: session.displayName
+                    displayName: session.displayName,
+                    promptTimeline: session.promptTimeline
                 )
             }
         )

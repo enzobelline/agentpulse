@@ -7,6 +7,7 @@ struct WorkspaceListView: View {
     @State private var workspaces: [WorkspaceSnapshot] = []
     @State private var searchText = ""
     @State private var expandedId: String?
+    @State private var expandedSessionId: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -95,6 +96,7 @@ struct WorkspaceRowView: View {
     let onDelete: () -> Void
 
     @State private var isHovered = false
+    @State private var expandedSessionId: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -139,28 +141,67 @@ struct WorkspaceRowView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(workspace.sessions, id: \.sessionId) { session in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(Color.secondary.opacity(0.3))
-                                .frame(width: 6, height: 6)
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(Color.secondary.opacity(0.3))
+                                    .frame(width: 6, height: 6)
 
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(session.displayName ?? dirName(session.directory))
-                                    .font(.system(size: 12))
-                                    .lineLimit(1)
-                                Text(session.directory)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(session.displayName ?? dirName(session.directory))
+                                        .font(.system(size: 12))
+                                        .lineLimit(1)
+                                    Text(dirName(session.directory))
+                                        .font(.caption2)
+                                        .foregroundStyle(.tertiary)
+                                        .lineLimit(1)
+                                }
+
+                                Spacer()
+
+                                if session.promptTimeline != nil {
+                                    Image(systemName: expandedSessionId == session.sessionId ? "chevron.down" : "chevron.right")
+                                        .font(.system(size: 8))
+                                        .foregroundStyle(.quaternary)
+                                }
+
+                                Text(shortId(session.sessionId))
                                     .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                    .lineLimit(1)
+                                    .foregroundStyle(.quaternary)
+                                    .monospacedDigit()
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if session.promptTimeline != nil {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        expandedSessionId = expandedSessionId == session.sessionId ? nil : session.sessionId
+                                    }
+                                }
                             }
 
-                            Spacer()
-
-                            Text(shortId(session.sessionId))
-                                .font(.caption2)
-                                .foregroundStyle(.quaternary)
-                                .monospacedDigit()
+                            // Prompt timeline
+                            if expandedSessionId == session.sessionId,
+                               let prompts = session.promptTimeline, !prompts.isEmpty {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    ForEach(Array(prompts.enumerated()), id: \.offset) { idx, prompt in
+                                        HStack(alignment: .top, spacing: 4) {
+                                            Text("\(idx + 1).")
+                                                .font(.caption2)
+                                                .foregroundStyle(.quaternary)
+                                                .frame(width: 14, alignment: .trailing)
+                                            Text(prompt)
+                                                .font(.caption2)
+                                                .foregroundStyle(.tertiary)
+                                                .lineLimit(2)
+                                        }
+                                    }
+                                }
+                                .padding(.leading, 14)
+                                .padding(.top, 4)
+                                .transition(.opacity.combined(with: .move(edge: .top)))
+                            }
                         }
+                        .padding(.vertical, 2)
                     }
 
                     // Restore button

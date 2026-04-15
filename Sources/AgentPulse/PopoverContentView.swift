@@ -15,6 +15,7 @@ struct PopoverContentView: View {
     @State private var selectedTab: PopoverTab = .active
     @State private var spinnerIdx = 0
     @State private var tick = 0  // drives live timestamp updates
+    @State private var showSavedConfirmation = false
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -150,19 +151,33 @@ struct PopoverContentView: View {
             // Footer
             HStack(spacing: 4) {
                 Button("Quit") {
-                    NSApplication.shared.terminate(nil)
+                    confirmQuit()
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .font(.caption)
+                .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
 
                 if !store.sessions.isEmpty {
-                    Button("Save") {
-                        WorkspaceManager.shared.save(sessions: store.sessions)
+                    if showSavedConfirmation {
+                        Text("Saved!")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                            .transition(.opacity)
+                    } else {
+                        Button("Save") {
+                            WorkspaceManager.shared.save(sessions: store.sessions)
+                            withAnimation { showSavedConfirmation = true }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                withAnimation { showSavedConfirmation = false }
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.blue)
+                        .font(.caption)
+                        .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                        .transition(.opacity)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.blue)
-                    .font(.caption)
                 }
 
                 Spacer()
@@ -213,6 +228,18 @@ struct PopoverContentView: View {
             }
         }
         return groups
+    }
+
+    private func confirmQuit() {
+        let alert = NSAlert()
+        alert.messageText = "Quit AgentPulse?"
+        alert.informativeText = "AgentPulse will stop monitoring your sessions."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSApplication.shared.terminate(nil)
+        }
     }
 
     private var statusCounts: (running: Int, waiting: Int, done: Int) {
