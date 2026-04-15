@@ -22,7 +22,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover(_:))
 
-        popover.contentSize = NSSize(width: 400, height: 350)
+        popover.contentSize = NSSize(width: 500, height: 350)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: PopoverContentView(store: store, dismiss: { [weak self] in

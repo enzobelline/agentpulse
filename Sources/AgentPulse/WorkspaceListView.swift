@@ -27,13 +27,26 @@ struct WorkspaceListView: View {
             Divider()
 
             if filtered.isEmpty {
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Spacer()
-                    Text(workspaces.isEmpty ? "No saved workspaces" : "No matches")
-                        .foregroundStyle(.secondary)
-                    Text(workspaces.isEmpty ? "Save your current sessions to restore them later" : "")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
+                    if workspaces.isEmpty {
+                        Image(systemName: "square.stack.3d.up")
+                            .font(.system(size: 28))
+                            .foregroundStyle(.quaternary)
+                        Text("No saved workspaces")
+                            .foregroundStyle(.secondary)
+                        VStack(spacing: 4) {
+                            Text("Save your active sessions as a workspace")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                            Text("Click \"Save\" in the Current tab to get started")
+                                .font(.caption)
+                                .foregroundStyle(.tertiary)
+                        }
+                    } else {
+                        Text("No matches")
+                            .foregroundStyle(.secondary)
+                    }
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -141,67 +154,17 @@ struct WorkspaceRowView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(workspace.sessions, id: \.sessionId) { session in
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack(spacing: 8) {
-                                Circle()
-                                    .fill(Color.secondary.opacity(0.3))
-                                    .frame(width: 6, height: 6)
-
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(session.displayName ?? dirName(session.directory))
-                                        .font(.system(size: 12))
-                                        .lineLimit(1)
-                                    Text(dirName(session.directory))
-                                        .font(.caption2)
-                                        .foregroundStyle(.tertiary)
-                                        .lineLimit(1)
-                                }
-
-                                Spacer()
-
-                                if session.promptTimeline != nil {
-                                    Image(systemName: expandedSessionId == session.sessionId ? "chevron.down" : "chevron.right")
-                                        .font(.system(size: 8))
-                                        .foregroundStyle(.quaternary)
-                                }
-
-                                Text(shortId(session.sessionId))
-                                    .font(.caption2)
-                                    .foregroundStyle(.quaternary)
-                                    .monospacedDigit()
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if session.promptTimeline != nil {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        expandedSessionId = expandedSessionId == session.sessionId ? nil : session.sessionId
-                                    }
+                        WorkspaceSessionRow(
+                            session: session,
+                            isExpanded: expandedSessionId == session.sessionId,
+                            actions: actions,
+                            dismiss: dismiss,
+                            onToggle: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    expandedSessionId = expandedSessionId == session.sessionId ? nil : session.sessionId
                                 }
                             }
-
-                            // Prompt timeline
-                            if expandedSessionId == session.sessionId,
-                               let prompts = session.promptTimeline, !prompts.isEmpty {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    ForEach(Array(prompts.enumerated()), id: \.offset) { idx, prompt in
-                                        HStack(alignment: .top, spacing: 4) {
-                                            Text("\(idx + 1).")
-                                                .font(.caption2)
-                                                .foregroundStyle(.quaternary)
-                                                .frame(width: 14, alignment: .trailing)
-                                            Text(prompt)
-                                                .font(.caption2)
-                                                .foregroundStyle(.tertiary)
-                                                .lineLimit(2)
-                                        }
-                                    }
-                                }
-                                .padding(.leading, 14)
-                                .padding(.top, 4)
-                                .transition(.opacity.combined(with: .move(edge: .top)))
-                            }
-                        }
-                        .padding(.vertical, 2)
+                        )
                     }
 
                     // Restore button
@@ -236,14 +199,6 @@ struct WorkspaceRowView: View {
         }
     }
 
-    private func dirName(_ path: String) -> String {
-        URL(fileURLWithPath: path).lastPathComponent
-    }
-
-    private func shortId(_ id: String) -> String {
-        String(id.prefix(4))
-    }
-
     private func showRenameDialog() {
         let alert = NSAlert()
         alert.messageText = "Rename Workspace"
@@ -263,4 +218,102 @@ struct WorkspaceRowView: View {
             }
         }
     }
+
+    private func dirName(_ path: String) -> String {
+        URL(fileURLWithPath: path).lastPathComponent
+    }
 }
+
+// MARK: - Workspace Session Row
+
+struct WorkspaceSessionRow: View {
+    let session: WorkspaceSession
+    let isExpanded: Bool
+    let actions: SessionActions
+    var dismiss: (() -> Void)?
+    let onToggle: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(width: 6, height: 6)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.displayName ?? dirName)
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                    Text(dirName)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if session.promptTimeline != nil {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.quaternary)
+                }
+
+                Text(String(session.sessionId.prefix(4)))
+                    .font(.caption2)
+                    .foregroundStyle(.quaternary)
+                    .monospacedDigit()
+            }
+            .padding(.vertical, 3)
+            .background(isHovered ? Color.primary.opacity(0.06) : Color.clear)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                isHovered = hovering
+                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
+            .onTapGesture { onToggle() }
+            .contextMenu {
+                Button("Resume Session") {
+                    dismiss?()
+                    actions.resumeSession(directory: session.directory, sessionId: session.sessionId)
+                }
+                Button("Resume (Skip Perms)") {
+                    dismiss?()
+                    actions.resumeSessionDangerous(directory: session.directory, sessionId: session.sessionId)
+                }
+                Divider()
+                Button("Copy Resume Command") {
+                    actions.copyResumeCommand(directory: session.directory, sessionId: session.sessionId)
+                }
+            }
+
+            // Prompt timeline
+            if isExpanded, let prompts = session.promptTimeline, !prompts.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    ForEach(Array(prompts.enumerated()), id: \.offset) { idx, prompt in
+                        HStack(alignment: .top, spacing: 4) {
+                            Text("\(idx + 1).")
+                                .font(.caption2)
+                                .foregroundStyle(.quaternary)
+                                .frame(width: 14, alignment: .trailing)
+                            Text(prompt)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+                .padding(.leading, 14)
+                .padding(.top, 4)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var dirName: String {
+        URL(fileURLWithPath: session.directory).lastPathComponent
+    }
+}
+

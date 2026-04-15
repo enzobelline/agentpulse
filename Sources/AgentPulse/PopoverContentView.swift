@@ -67,7 +67,7 @@ struct PopoverContentView: View {
             }
             .transition(.opacity.animation(.easeInOut(duration: 0.15)))
         }
-        .frame(width: 400, height: 350)
+        .frame(width: 500, height: 350)
         .onReceive(timer) { _ in
             spinnerIdx = (spinnerIdx + 1) % Constants.spinnerFrames.count
             tick += 1
@@ -149,7 +149,9 @@ struct PopoverContentView: View {
             Divider()
 
             // Footer
-            HStack(spacing: 4) {
+            Divider()
+
+            HStack(spacing: 6) {
                 Button("Quit") {
                     confirmQuit()
                 }
@@ -178,6 +180,18 @@ struct PopoverContentView: View {
                         .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
                         .transition(.opacity)
                     }
+
+                    let doneCount = store.sessions.values.filter { $0.status == "done" }.count
+                    if doneCount > 0 {
+                        Button("Clear Done (\(doneCount))") {
+                            let keys = store.sessions.filter { $0.value.status == "done" }.map(\.key)
+                            store.removeSessions(keys)
+                        }
+                        .buttonStyle(.plain)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                    }
                 }
 
                 Spacer()
@@ -199,9 +213,6 @@ struct PopoverContentView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("  ⌃⌥A")
-                    .font(.caption2)
-                    .foregroundStyle(.quaternary)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 6)
@@ -228,6 +239,18 @@ struct PopoverContentView: View {
             }
         }
         return groups
+    }
+
+    private func confirmClearAll() {
+        let alert = NSAlert()
+        alert.messageText = "Clear All Sessions?"
+        alert.informativeText = "This will remove all sessions from the list. They can still be resumed from History."
+        alert.addButton(withTitle: "Clear All")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        if alert.runModal() == .alertFirstButtonReturn {
+            store.removeSessions(Array(store.sessions.keys))
+        }
     }
 
     private func confirmQuit() {

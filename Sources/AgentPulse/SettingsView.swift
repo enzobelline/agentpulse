@@ -58,43 +58,29 @@ struct SettingsView: View {
 
             Divider()
 
-            // Clear actions
-            HStack(spacing: 12) {
-                let doneCount = store.sessions.values.filter { $0.status == "done" }.count
-                Button("Clear Done (\(doneCount))") {
-                    let keys = store.sessions.filter { $0.value.status == "done" }.map(\.key)
-                    store.removeSessions(keys)
+            // Keyboard shortcuts (inline)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Shortcuts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 16) {
+                    shortcutRow("⌃⌥A", "Toggle dropdown")
+                    shortcutRow("Click", "Go to Terminal")
+                    shortcutRow("Right-click", "Session actions")
                 }
-                .controlSize(.small)
-                .disabled(doneCount == 0)
-
-                Button("Clear All") {
-                    store.removeSessions(Array(store.sessions.keys))
-                }
-                .controlSize(.small)
-                .foregroundStyle(.red.opacity(0.8))
-                .disabled(store.sessions.isEmpty)
-
-                Spacer()
             }
 
             Divider()
 
             // Help
             HStack(spacing: 12) {
-                Button("Keyboard Shortcuts") {
-                    showShortcuts()
-                }
-                .controlSize(.small)
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-
                 Button("Report a Bug") {
                     NSWorkspace.shared.open(URL(string: "https://github.com/enzobelline/agentpulse/issues")!)
                 }
                 .controlSize(.small)
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
+                .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
 
                 Spacer()
             }
@@ -103,16 +89,18 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func showShortcuts() {
-        let alert = NSAlert()
-        alert.messageText = "Keyboard Shortcuts"
-        alert.informativeText = """
-        ⌃⌥A — Toggle AgentPulse dropdown
-        Click session — Go to Terminal
-        Right-click — Session actions
-        """
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+    private func shortcutRow(_ key: String, _ desc: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, design: .monospaced))
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(Color.primary.opacity(0.08))
+                .cornerRadius(3)
+            Text(desc)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
     }
 
     // MARK: - Bindings
@@ -137,7 +125,7 @@ struct SettingsView: View {
     }
 }
 
-// MARK: - Sound Picker with Preview
+// MARK: - Sound Picker
 
 struct SoundPicker: View {
     let label: String
@@ -149,7 +137,9 @@ struct SoundPicker: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Picker("", selection: $selection) {
-                ForEach(Settings.availableSounds, id: \.self) { Text($0).tag($0) }
+                ForEach(Settings.availableSounds, id: \.self) { sound in
+                    Text(sound).tag(sound)
+                }
             }
             .labelsHidden()
             .controlSize(.small)

@@ -19,8 +19,16 @@ struct HistoryView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Clear") {
-                    SessionHistory.shared.clearAll()
-                    entries = []
+                    let alert = NSAlert()
+                    alert.messageText = "Clear History?"
+                    alert.informativeText = "This will delete all session history. This cannot be undone."
+                    alert.addButton(withTitle: "Clear")
+                    alert.addButton(withTitle: "Cancel")
+                    alert.alertStyle = .warning
+                    if alert.runModal() == .alertFirstButtonReturn {
+                        SessionHistory.shared.clearAll()
+                        entries = []
+                    }
                 }
                 .font(.caption)
                 .buttonStyle(.plain)
