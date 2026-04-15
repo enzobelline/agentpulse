@@ -2,7 +2,8 @@ import SwiftUI
 import AgentPulseLib
 
 enum PopoverTab: String, CaseIterable {
-    case sessions = "Sessions"
+    case active = "Active"
+    case workspaces = "Workspaces"
     case history = "History"
     case settings = "Settings"
 }
@@ -11,7 +12,7 @@ struct PopoverContentView: View {
     var store: SessionStore
     var dismiss: (() -> Void)?
     @State private var actions: SessionActions?
-    @State private var selectedTab: PopoverTab = .sessions
+    @State private var selectedTab: PopoverTab = .active
     @State private var spinnerIdx = 0
     @State private var tick = 0  // drives live timestamp updates
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -49,8 +50,12 @@ struct PopoverContentView: View {
             // Content
             Group {
                 switch selectedTab {
-                case .sessions:
+                case .active:
                     sessionsContent
+                case .workspaces:
+                    if let actions {
+                        WorkspaceListView(actions: actions, dismiss: dismiss)
+                    }
                 case .history:
                     if let actions {
                         HistoryView(actions: actions, dismiss: dismiss)
@@ -77,7 +82,8 @@ struct PopoverContentView: View {
 
     private func tabLabel(_ tab: PopoverTab) -> String {
         switch tab {
-        case .sessions: return "Sessions (\(store.sessions.count))"
+        case .active: return "Current (\(store.sessions.count))"
+        case .workspaces: return "Workspaces"
         case .history: return "History"
         case .settings: return "Settings"
         }
@@ -149,6 +155,15 @@ struct PopoverContentView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .font(.caption)
+
+                if !store.sessions.isEmpty {
+                    Button("Save") {
+                        WorkspaceManager.shared.save(sessions: store.sessions)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.blue)
+                    .font(.caption)
+                }
 
                 Spacer()
 
