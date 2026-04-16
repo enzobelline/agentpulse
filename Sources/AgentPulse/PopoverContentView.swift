@@ -11,7 +11,7 @@ enum PopoverTab: String, CaseIterable {
 struct PopoverContentView: View {
     var store: SessionStore
     var dismiss: (() -> Void)?
-    @State private var actions: SessionActions?
+    var actions: SessionActions
     @State private var selectedTab: PopoverTab = .active
     @State private var spinnerIdx = 0
     @State private var tick = 0  // drives live timestamp updates
@@ -54,13 +54,9 @@ struct PopoverContentView: View {
                 case .active:
                     sessionsContent
                 case .workspaces:
-                    if let actions {
-                        WorkspaceListView(actions: actions, dismiss: dismiss)
-                    }
+                    WorkspaceListView(actions: actions, dismiss: dismiss)
                 case .history:
-                    if let actions {
-                        HistoryView(actions: actions, dismiss: dismiss)
-                    }
+                    HistoryView(actions: actions, dismiss: dismiss)
                 case .settings:
                     SettingsView(store: store)
                 }
@@ -71,11 +67,6 @@ struct PopoverContentView: View {
         .onReceive(timer) { _ in
             spinnerIdx = (spinnerIdx + 1) % Constants.spinnerFrames.count
             tick += 1
-        }
-        .onAppear {
-            if actions == nil {
-                actions = SessionActions(store: store)
-            }
         }
     }
 
@@ -127,18 +118,16 @@ struct PopoverContentView: View {
                             }
 
                             ForEach(group.items, id: \.key) { key, session in
-                                if let actions {
-                                    SessionRowView(
-                                        key: key,
-                                        session: session,
-                                        actions: actions,
-                                        spinnerIdx: spinnerIdx,
-                                        isPinned: store.settings.pinnedSessions.contains(key),
-                                        tick: tick,
-                                        dismiss: dismiss
-                                    )
-                                    Divider().padding(.horizontal, 16).opacity(0.5)
-                                }
+                                SessionRowView(
+                                    key: key,
+                                    session: session,
+                                    actions: actions,
+                                    spinnerIdx: spinnerIdx,
+                                    isPinned: store.settings.pinnedSessions.contains(key),
+                                    tick: tick,
+                                    dismiss: dismiss
+                                )
+                                Divider().padding(.horizontal, 16).opacity(0.5)
                             }
                         }
                     }
@@ -158,7 +147,7 @@ struct PopoverContentView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .font(.caption)
-                .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
 
                 if !store.sessions.isEmpty {
                     if showSavedConfirmation {
@@ -177,7 +166,7 @@ struct PopoverContentView: View {
                         .buttonStyle(.plain)
                         .foregroundStyle(.blue)
                         .font(.caption)
-                        .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                        .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
                         .transition(.opacity)
                     }
 
@@ -190,7 +179,7 @@ struct PopoverContentView: View {
                         .buttonStyle(.plain)
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                        .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
                     }
                 }
 
@@ -352,9 +341,9 @@ struct SessionRowView: View {
         .onHover { hovering in
             isHovered = hovering
             if hovering {
-                NSCursor.pointingHand.push()
+                NSCursor.pointingHand.set()
             } else {
-                NSCursor.pop()
+                NSCursor.arrow.set()
             }
         }
         .opacity(session.status == "done" ? 0.6 : 1.0)

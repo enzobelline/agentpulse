@@ -80,7 +80,7 @@ struct SettingsView: View {
                 .controlSize(.small)
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
 
                 Spacer()
             }

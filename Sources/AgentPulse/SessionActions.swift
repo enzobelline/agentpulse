@@ -15,10 +15,16 @@ final class SessionActions {
 
     func goToTerminal(key: String) {
         let session = store.sessions[key]
+        // Done sessions have stale TTYs — always open new terminal
+        if session?.status == "done" {
+            openTerminalAt(session?.directory ?? key)
+            return
+        }
         switch resolveAttachAction(session: session, sessionKey: key) {
         case .openTerminal(let dir):
             openTerminalAt(dir)
         case .activateWindow(let tty):
+            let fallbackDir = session?.directory ?? key
             let script = """
                 tell application "Terminal"
                     repeat with w in windows
@@ -34,24 +40,25 @@ final class SessionActions {
                     return "not found"
                 end tell
                 """
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            process.arguments = ["-e", script]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
-            do {
-                try process.run()
-                process.waitUntilExit()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                if output != "found" {
-                    let dir = session?.directory ?? key
-                    openTerminalAt(dir)
+            // Run off main thread to avoid blocking UI
+            Task.detached { [weak self] in
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+                process.arguments = ["-e", script]
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = pipe
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    if output != "found" {
+                        await MainActor.run { self?.openTerminalAt(fallbackDir) }
+                    }
+                } catch {
+                    await MainActor.run { self?.openTerminalAt(fallbackDir) }
                 }
-            } catch {
-                let dir = session?.directory ?? key
-                openTerminalAt(dir)
             }
         }
     }
@@ -126,9 +133,23 @@ final class SessionActions {
 
     // MARK: - Resume (History)
 
+    private func shellEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+         .replacingOccurrences(of: "$", with: "\\$")
+         .replacingOccurrences(of: "`", with: "\\`")
+    }
+
+    private func isValidSessionId(_ id: String) -> Bool {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        return id.unicodeScalars.allSatisfy { allowed.contains($0) }
+    }
+
     func resumeSession(directory: String, sessionId: String) {
+        guard isValidSessionId(sessionId) else { return }
+        let escapedDir = shellEscape(directory)
         let tmpPath = NSTemporaryDirectory() + "agentpulse-resume.command"
-        let script = "#!/bin/bash\ncd \"\(directory)\" && claude --resume \(sessionId)\n"
+        let script = "#!/bin/bash\ncd \"\(escapedDir)\" && claude --resume \(sessionId)\n"
         do {
             try script.write(toFile: tmpPath, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
@@ -137,8 +158,10 @@ final class SessionActions {
     }
 
     func resumeSessionDangerous(directory: String, sessionId: String) {
+        guard isValidSessionId(sessionId) else { return }
+        let escapedDir = shellEscape(directory)
         let tmpPath = NSTemporaryDirectory() + "agentpulse-resume.command"
-        let script = "#!/bin/bash\ncd \"\(directory)\" && claude --resume \(sessionId) --dangerously-skip-permissions\n"
+        let script = "#!/bin/bash\ncd \"\(escapedDir)\" && claude --resume \(sessionId) --dangerously-skip-permissions\n"
         do {
             try script.write(toFile: tmpPath, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tmpPath)
@@ -147,7 +170,8 @@ final class SessionActions {
     }
 
     func copyResumeCommand(directory: String, sessionId: String) {
-        let command = "cd \"\(directory)\" && claude --resume \(sessionId)"
+        let escapedDir = shellEscape(directory)
+        let command = "cd \"\(escapedDir)\" && claude --resume \(sessionId)"
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(command, forType: .string)
     }

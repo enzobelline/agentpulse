@@ -81,10 +81,11 @@ final class WorkspaceManager {
     // MARK: - Restore
 
     func restore(_ snapshot: WorkspaceSnapshot, using actions: SessionActions) {
-        for session in snapshot.sessions {
-            actions.resumeSession(directory: session.directory, sessionId: session.sessionId)
-            // Small delay between terminal opens to avoid race conditions
-            Thread.sleep(forTimeInterval: 0.5)
+        Task { @MainActor in
+            for session in snapshot.sessions {
+                actions.resumeSession(directory: session.directory, sessionId: session.sessionId)
+                try? await Task.sleep(for: .milliseconds(500))
+            }
         }
     }
 

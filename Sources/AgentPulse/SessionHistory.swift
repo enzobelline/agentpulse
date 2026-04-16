@@ -35,7 +35,8 @@ final class SessionHistory {
         guard FileManager.default.fileExists(atPath: historyFile) else { return [] }
         do {
             let data = try Data(contentsOf: URL(fileURLWithPath: historyFile))
-            return try JSONDecoder().decode([HistoryEntry].self, from: data)
+            let entries = try JSONDecoder().decode([HistoryEntry].self, from: data)
+            return Array(entries.prefix(maxEntries))
         } catch {
             return []
         }
@@ -45,6 +46,12 @@ final class SessionHistory {
         var entries = load()
         guard index >= 0, index < entries.count else { return }
         entries.remove(at: index)
+        save(entries)
+    }
+
+    func removeEntry(sessionId: String) {
+        var entries = load()
+        entries.removeAll { $0.sessionId == sessionId }
         save(entries)
     }
 

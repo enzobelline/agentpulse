@@ -62,10 +62,8 @@ struct HistoryView: View {
                                     }
                                 },
                                 onDelete: {
-                                    if let idx = entries.firstIndex(where: { $0.sessionId == entry.sessionId }) {
-                                        SessionHistory.shared.removeEntry(at: idx)
-                                        entries = SessionHistory.shared.load()
-                                    }
+                                    SessionHistory.shared.removeEntry(sessionId: entry.sessionId)
+                                    entries = SessionHistory.shared.load()
                                 }
                             )
                             Divider().padding(.horizontal, 16).opacity(0.5)

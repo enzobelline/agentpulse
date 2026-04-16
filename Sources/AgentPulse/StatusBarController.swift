@@ -24,10 +24,11 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
 
         popover.contentSize = NSSize(width: 500, height: 350)
         popover.behavior = .transient
+        let actions = SessionActions(store: store)
         popover.contentViewController = NSHostingController(
             rootView: PopoverContentView(store: store, dismiss: { [weak self] in
                 self?.popover.performClose(nil)
-            })
+            }, actions: actions)
         )
 
         registerGlobalHotkey()

@@ -38,7 +38,7 @@ struct WorkspaceListView: View {
                     .font(.caption)
                     .buttonStyle(.plain)
                     .foregroundStyle(.red.opacity(0.8))
-                    .onHover { h in if h { NSCursor.pointingHand.push() } else { NSCursor.pop() } }
+                    .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
                 }
             }
             .padding(.horizontal, 16)
@@ -290,7 +290,7 @@ struct WorkspaceSessionRow: View {
             .contentShape(Rectangle())
             .onHover { hovering in
                 isHovered = hovering
-                if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                if hovering { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() }
             }
             .onTapGesture { onToggle() }
             .contextMenu {
