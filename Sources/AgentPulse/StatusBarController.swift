@@ -41,6 +41,9 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
         if popover.isShown {
             popover.performClose(sender)
         } else if let button = statusItem.button {
+            // .accessory apps don't auto-activate, and without activation
+            // NSPopover's .transient behavior can't detect outside clicks.
+            NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
