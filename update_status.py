@@ -2,6 +2,7 @@
 """Hook helper - updates session status in ~/.claude/session-status.json."""
 
 import fcntl
+import glob
 import json
 import os
 import re
@@ -11,8 +12,10 @@ import time
 STATUS_FILE = os.path.expanduser("~/.claude/session-status.json")
 HISTORY_FILE = os.path.expanduser("~/.claude/session-history.json")
 SHADOW_FILE = os.path.expanduser("~/.claude/session-shadow.json")
+PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 MAX_HISTORY = 50
 SHADOW_MAX_AGE = 86400  # 24 hours
+CONTEXT_TAIL_BYTES = 65536  # 64KB tail read covers ~10 recent assistant turns
 
 DEFAULT_SYMBOLS = [
     "◆", "●", "▲", "■", "★",
@@ -392,6 +395,64 @@ def _strip_preamble(text):
     return text
 
 
+def compute_context_pct(session_id, session_data):
+    """Return context usage % from the latest assistant message in the session's JSONL.
+
+    Reads the last ~64KB of the transcript so long sessions stay cheap. Falls back
+    to a 200k-token window; upgrades to 1M once any observed sample exceeds 200k
+    (persisted back to the session dict so the upgrade is sticky).
+    """
+    matches = glob.glob(os.path.join(PROJECTS_DIR, "*", f"{session_id}.jsonl"))
+    if not matches:
+        return None
+    path = matches[0]
+    try:
+        size = os.path.getsize(path)
+        read_size = min(size, CONTEXT_TAIL_BYTES)
+        with open(path, "rb") as f:
+            f.seek(size - read_size)
+            data = f.read()
+    except OSError:
+        return None
+
+    lines = data.split(b"\n")
+    # Drop the first line if we seeked into the middle of the file — it's partial
+    if size > read_size:
+        lines = lines[1:]
+
+    latest_tokens = None
+    observed_peak = 0
+    for raw in lines:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            d = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if d.get("type") != "assistant":
+            continue
+        usage = (d.get("message") or {}).get("usage")
+        if not usage:
+            continue
+        tokens = (usage.get("input_tokens", 0)
+                  + usage.get("cache_creation_input_tokens", 0)
+                  + usage.get("cache_read_input_tokens", 0))
+        observed_peak = max(observed_peak, tokens)
+        latest_tokens = tokens
+
+    if latest_tokens is None:
+        return None
+
+    # Sticky window detection: once 1M, stay 1M
+    window = session_data.get("context_window_size", 200000)
+    if observed_peak > 200000 or window == 1000000:
+        window = 1000000
+    session_data["context_window_size"] = window
+
+    return round(100.0 * latest_tokens / window, 1) if window else None
+
+
 def extract_prompt_summary(stdin_data):
     """Extract a display summary from a UserPromptSubmit hook payload.
 
@@ -526,6 +587,11 @@ def update_status(status, summary=None, stdin_data=None):
                 # Assign a symbol once per session
                 if "symbol" not in session:
                     session["symbol"] = assign_symbol(data, session_key)
+
+                # Context window usage from the session transcript
+                pct = compute_context_pct(session_key, session)
+                if pct is not None:
+                    session["context_pct"] = pct
 
                 # Keyword extraction
                 session["keywords"] = extract_keywords(stdin_data, session.get("keywords"))

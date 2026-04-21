@@ -327,6 +327,13 @@ struct SessionRowView: View {
 
             Spacer()
 
+            if let pct = session.contextPct {
+                Text("\(Int(pct.rounded()))%")
+                    .font(.caption)
+                    .foregroundStyle(contextColor(for: pct))
+                    .monospacedDigit()
+            }
+
             if !liveDuration.isEmpty {
                 Text(liveDuration)
                     .font(.caption)
@@ -438,6 +445,12 @@ struct SessionRowView: View {
 
     private var directoryName: String {
         URL(fileURLWithPath: session.directory ?? session.name).lastPathComponent
+    }
+
+    private func contextColor(for pct: Double) -> Color {
+        if pct < 40 { return .green }
+        if pct < 70 { return .yellow }
+        return .red
     }
 
     // Live-updating duration — `tick` dependency forces recalculation every second
