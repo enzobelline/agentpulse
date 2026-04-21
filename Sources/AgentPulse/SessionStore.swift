@@ -75,6 +75,19 @@ final class SessionStore {
         }
     }
 
+    /// Update a session's context % in memory only (no file write).
+    /// Called by TranscriptWatcher between hook events so the UI reflects
+    /// the latest transcript state without waiting for Python to re-run.
+    /// Python's next hook write will overwrite this value, which is fine —
+    /// the file is still the canonical source at hook boundaries.
+    func updateLiveContextPct(sessionId: String, pct: Double) {
+        guard var session = sessions[sessionId] else { return }
+        if session.contextPct == pct { return }
+        session.contextPct = pct
+        sessions[sessionId] = session
+        delegate?.sessionStoreDidUpdate()
+    }
+
     /// Remove done sessions that have exceeded the auto-clear TTL.
     func clearExpiredSessions() {
         let keys = AgentPulseLib.expiredSessionKeys(sessions, ttlMinutes: settings.autoClearAfterMinutes, now: Date().timeIntervalSince1970)

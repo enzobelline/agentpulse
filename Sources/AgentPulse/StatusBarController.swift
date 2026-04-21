@@ -11,6 +11,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
     private var popover: NSPopover
     private var globalHotkeyMonitor: Any?
     private var animationTimer: Timer?
+    private let transcriptWatcher = TranscriptWatcher()
 
     init(store: SessionStore) {
         self.store = store
@@ -33,6 +34,8 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
 
         registerGlobalHotkey()
         startAnimationTimer()
+        transcriptWatcher.store = store
+        transcriptWatcher.sync()
     }
 
     // MARK: - Popover
@@ -71,6 +74,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
 
     nonisolated func sessionStoreDidUpdate() {
         MainActor.assumeIsolated {
+            transcriptWatcher.sync()
             refresh()
         }
     }
