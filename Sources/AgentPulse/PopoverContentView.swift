@@ -304,21 +304,21 @@ struct SessionRowView: View {
                             .foregroundStyle(.orange)
                     }
                     Text(summaryText)
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .lineLimit(1)
                 }
 
                 HStack(spacing: 6) {
                     if !hasLineage {
                         Text(directoryName)
-                            .font(.caption)
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
 
                     if let activity = AgentPulseLib.displayActivity(for: session),
                        session.status == "running" {
                         Text("— \(activity)")
-                            .font(.caption)
+                            .font(.system(size: 12))
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                     }
@@ -329,14 +329,14 @@ struct SessionRowView: View {
 
             if let pct = session.contextPct {
                 Text("\(Int(pct.rounded()))%")
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(contextColor(for: pct))
                     .monospacedDigit()
             }
 
             if !liveDuration.isEmpty {
                 Text(liveDuration)
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }

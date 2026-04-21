@@ -109,15 +109,15 @@ struct HistoryRowView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(displayName)
-                        .font(.system(size: 13))
+                        .font(.system(size: 14))
                         .lineLimit(1)
                     HStack(spacing: 6) {
                         Text(dirName)
-                            .font(.caption)
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                         if let kw = entry.keywords, !kw.isEmpty {
                             Text(kw.prefix(3).joined(separator: ", "))
-                                .font(.caption2)
+                                .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                                 .lineLimit(1)
                         }
@@ -127,7 +127,7 @@ struct HistoryRowView: View {
                 Spacer()
 
                 Text(duration)
-                    .font(.caption)
+                    .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
 
@@ -154,11 +154,11 @@ struct HistoryRowView: View {
                             ForEach(Array(metricTokens.enumerated()), id: \.offset) { idx, token in
                                 if idx > 0 {
                                     Text("·")
-                                        .font(.caption)
+                                        .font(.system(size: 12))
                                         .foregroundStyle(.tertiary)
                                 }
                                 Text(token.text)
-                                    .font(.caption)
+                                    .font(.system(size: 12))
                                     .monospacedDigit()
                                     .foregroundStyle(token.color)
                             }
@@ -168,18 +168,18 @@ struct HistoryRowView: View {
                         ForEach(Array(timeline.enumerated()), id: \.offset) { idx, prompt in
                             HStack(alignment: .top, spacing: 6) {
                                 Text("\(idx + 1).")
-                                    .font(.caption2)
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.tertiary)
                                     .frame(width: 16, alignment: .trailing)
                                 Text(prompt)
-                                    .font(.caption)
+                                    .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(2)
                             }
                         }
                     } else {
                         Text(entry.summary)
-                            .font(.caption)
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
                 }
