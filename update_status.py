@@ -395,12 +395,24 @@ def _strip_preamble(text):
     return text
 
 
+def _context_window_for(model):
+    """Context window size for a given Claude model ID.
+
+    Opus 4.x in Claude Code defaults to the 1M-context variant for most users;
+    the [1m] flag isn't written into the transcript, so we assume opus = 1M.
+    Sonnet and Haiku stay on the standard 200k. Unknown models fall back to 200k.
+    """
+    m = (model or "").lower()
+    if "opus" in m:
+        return 1_000_000
+    return 200_000
+
+
 def compute_context_pct(session_id, session_data):
     """Return context usage % from the latest assistant message in the session's JSONL.
 
-    Reads the last ~64KB of the transcript so long sessions stay cheap. Falls back
-    to a 200k-token window; upgrades to 1M once any observed sample exceeds 200k
-    (persisted back to the session dict so the upgrade is sticky).
+    Reads the last ~64KB of the transcript so long sessions stay cheap. Window
+    size is derived from the model family of the latest assistant message.
     """
     matches = glob.glob(os.path.join(PROJECTS_DIR, "*", f"{session_id}.jsonl"))
     if not matches:
@@ -421,7 +433,7 @@ def compute_context_pct(session_id, session_data):
         lines = lines[1:]
 
     latest_tokens = None
-    observed_peak = 0
+    latest_model = None
     for raw in lines:
         raw = raw.strip()
         if not raw:
@@ -432,24 +444,20 @@ def compute_context_pct(session_id, session_data):
             continue
         if d.get("type") != "assistant":
             continue
-        usage = (d.get("message") or {}).get("usage")
+        msg = d.get("message") or {}
+        usage = msg.get("usage")
         if not usage:
             continue
-        tokens = (usage.get("input_tokens", 0)
-                  + usage.get("cache_creation_input_tokens", 0)
-                  + usage.get("cache_read_input_tokens", 0))
-        observed_peak = max(observed_peak, tokens)
-        latest_tokens = tokens
+        latest_tokens = (usage.get("input_tokens", 0)
+                         + usage.get("cache_creation_input_tokens", 0)
+                         + usage.get("cache_read_input_tokens", 0))
+        latest_model = msg.get("model")
 
     if latest_tokens is None:
         return None
 
-    # Sticky window detection: once 1M, stay 1M
-    window = session_data.get("context_window_size", 200000)
-    if observed_peak > 200000 or window == 1000000:
-        window = 1000000
+    window = _context_window_for(latest_model)
     session_data["context_window_size"] = window
-
     return round(100.0 * latest_tokens / window, 1) if window else None
 
 
