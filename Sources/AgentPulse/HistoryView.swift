@@ -150,26 +150,17 @@ struct HistoryRowView: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 6) {
                     if hasMetrics {
-                        HStack(spacing: 10) {
-                            if let model = entry.model {
-                                Text(shortModelName(model))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let cost = entry.finalCost {
-                                Text(String(format: "$%.2f", cost))
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            if let pct = entry.finalContextPct {
-                                Text("\(Int(pct.rounded()))% ctx")
-                                    .font(.caption2)
-                                    .foregroundStyle(historyContextColor(for: pct))
-                            }
-                            if let turns = entry.turnCount {
-                                Text("\(turns) turns")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            ForEach(Array(metricTokens.enumerated()), id: \.offset) { idx, token in
+                                if idx > 0 {
+                                    Text("·")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                Text(token.text)
+                                    .font(.caption)
+                                    .monospacedDigit()
+                                    .foregroundStyle(token.color)
                             }
                         }
                     }
@@ -240,6 +231,23 @@ struct HistoryRowView: View {
     private var hasMetrics: Bool {
         entry.model != nil || entry.finalContextPct != nil
             || entry.finalCost != nil || entry.turnCount != nil
+    }
+
+    private var metricTokens: [(text: String, color: Color)] {
+        var tokens: [(String, Color)] = []
+        if let model = entry.model {
+            tokens.append((shortModelName(model), .secondary))
+        }
+        if let cost = entry.finalCost {
+            tokens.append((String(format: "$%.2f", cost), .secondary))
+        }
+        if let pct = entry.finalContextPct {
+            tokens.append(("\(Int(pct.rounded()))% ctx", historyContextColor(for: pct)))
+        }
+        if let turns = entry.turnCount {
+            tokens.append(("\(turns) turns", .secondary))
+        }
+        return tokens
     }
 
     private func shortModelName(_ id: String) -> String {
