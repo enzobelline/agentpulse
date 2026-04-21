@@ -146,9 +146,33 @@ struct HistoryRowView: View {
             }
             .onTapGesture { onToggle() }
 
-            // Expanded: prompt timeline
+            // Expanded: metrics strip + prompt timeline
             if isExpanded {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
+                    if hasMetrics {
+                        HStack(spacing: 10) {
+                            if let model = entry.model {
+                                Text(shortModelName(model))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let cost = entry.finalCost {
+                                Text(String(format: "$%.2f", cost))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if let pct = entry.finalContextPct {
+                                Text("\(Int(pct.rounded()))% ctx")
+                                    .font(.caption2)
+                                    .foregroundStyle(historyContextColor(for: pct))
+                            }
+                            if let turns = entry.turnCount {
+                                Text("\(turns) turns")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
                     if let timeline = entry.promptTimeline, !timeline.isEmpty {
                         ForEach(Array(timeline.enumerated()), id: \.offset) { idx, prompt in
                             HStack(alignment: .top, spacing: 6) {
@@ -211,5 +235,24 @@ struct HistoryRowView: View {
         if mins < 60 { return "\(mins)m" }
         let hrs = mins / 60
         return "\(hrs)h\(mins % 60 > 0 ? "\(mins % 60)m" : "")"
+    }
+
+    private var hasMetrics: Bool {
+        entry.model != nil || entry.finalContextPct != nil
+            || entry.finalCost != nil || entry.turnCount != nil
+    }
+
+    private func shortModelName(_ id: String) -> String {
+        // "claude-opus-4-7" → "Opus 4.7"
+        let parts = id.replacingOccurrences(of: "claude-", with: "").split(separator: "-")
+        guard parts.count >= 3 else { return id }
+        let family = parts[0].prefix(1).uppercased() + parts[0].dropFirst()
+        return "\(family) \(parts[1]).\(parts[2])"
+    }
+
+    private func historyContextColor(for pct: Double) -> Color {
+        if pct < 40 { return .green }
+        if pct < 70 { return .yellow }
+        return .red
     }
 }

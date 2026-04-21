@@ -158,6 +158,10 @@ public struct HistoryEntry: Codable, Equatable {
     public var displayName: String?
     public var keywords: [String]?
     public var promptTimeline: [String]?
+    public var finalContextPct: Double?
+    public var finalCost: Double?
+    public var model: String?
+    public var turnCount: Int?
 
     public enum CodingKeys: String, CodingKey {
         case symbol, directory, summary
@@ -168,9 +172,13 @@ public struct HistoryEntry: Codable, Equatable {
         case displayName = "display_name"
         case keywords
         case promptTimeline = "prompt_timeline"
+        case finalContextPct = "final_context_pct"
+        case finalCost = "final_cost"
+        case model
+        case turnCount = "turn_count"
     }
 
-    public init(symbol: String, directory: String, summary: String, sessionId: String, startedAt: TimeInterval, endedAt: TimeInterval, lastMessage: String? = nil, displayName: String? = nil, keywords: [String]? = nil, promptTimeline: [String]? = nil) {
+    public init(symbol: String, directory: String, summary: String, sessionId: String, startedAt: TimeInterval, endedAt: TimeInterval, lastMessage: String? = nil, displayName: String? = nil, keywords: [String]? = nil, promptTimeline: [String]? = nil, finalContextPct: Double? = nil, finalCost: Double? = nil, model: String? = nil, turnCount: Int? = nil) {
         self.symbol = symbol
         self.directory = directory
         self.summary = summary
@@ -181,5 +189,9 @@ public struct HistoryEntry: Codable, Equatable {
         self.displayName = displayName
         self.keywords = keywords
         self.promptTimeline = promptTimeline
+        self.finalContextPct = finalContextPct
+        self.finalCost = finalCost
+        self.model = model
+        self.turnCount = turnCount
     }
 }

@@ -167,6 +167,17 @@ def record_to_history(session, session_key, now):
     timeline = session.get("prompt_timeline")
     if timeline:
         entry["prompt_timeline"] = timeline
+    # Compute finals from the transcript (cost, turns, context at close, model)
+    finals = compute_final_metrics(session_key)
+    if finals:
+        if finals.get("final_cost") is not None:
+            entry["final_cost"] = finals["final_cost"]
+        if finals.get("final_context_pct") is not None:
+            entry["final_context_pct"] = finals["final_context_pct"]
+        if finals.get("model"):
+            entry["model"] = finals["model"]
+        if finals.get("turn_count"):
+            entry["turn_count"] = finals["turn_count"]
     # Read existing history
     history = []
     if os.path.exists(HISTORY_FILE):
@@ -393,6 +404,83 @@ def _strip_preamble(text):
                 changed = True
                 break
     return text
+
+
+# $ per 1M tokens by family: (input, output, cache_creation, cache_read).
+# Rough list-price estimates — update as Anthropic posts new rates.
+# Last verified: 2026-04-20.
+MODEL_PRICING = {
+    "opus":   (15.00, 75.00, 18.75, 1.50),
+    "sonnet": ( 3.00, 15.00,  3.75, 0.30),
+    "haiku":  ( 0.80,  4.00,  1.00, 0.08),
+}
+
+
+def _model_family(model_id):
+    m = (model_id or "").lower()
+    if "opus" in m: return "opus"
+    if "sonnet" in m: return "sonnet"
+    if "haiku" in m: return "haiku"
+    return "opus"  # safest default on unknown Opus-era IDs
+
+
+def _cost_of_turn(usage, model_id):
+    ip, op, cw, cr = MODEL_PRICING[_model_family(model_id)]
+    return (
+        usage.get("input_tokens", 0) * ip
+        + usage.get("output_tokens", 0) * op
+        + usage.get("cache_creation_input_tokens", 0) * cw
+        + usage.get("cache_read_input_tokens", 0) * cr
+    ) / 1_000_000
+
+
+def compute_final_metrics(session_id):
+    """Full-file scan over a session transcript. Returns totals for history.
+
+    Called once at session close — the full-file read is fine here because it's
+    a one-shot event, unlike compute_context_pct which fires on every hook.
+    Returns None if the transcript has no usable assistant messages.
+    """
+    matches = glob.glob(os.path.join(PROJECTS_DIR, "*", f"{session_id}.jsonl"))
+    if not matches:
+        return None
+    path = matches[0]
+    total_cost = 0.0
+    latest_tokens = None
+    latest_model = None
+    turns = 0
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if d.get("type") != "assistant":
+                    continue
+                msg = d.get("message") or {}
+                usage = msg.get("usage")
+                if not usage:
+                    continue
+                model = msg.get("model")
+                total_cost += _cost_of_turn(usage, model)
+                latest_tokens = (usage.get("input_tokens", 0)
+                                 + usage.get("cache_creation_input_tokens", 0)
+                                 + usage.get("cache_read_input_tokens", 0))
+                latest_model = model
+                turns += 1
+    except OSError:
+        return None
+    if turns == 0:
+        return None
+    window = _context_window_for(latest_model)
+    pct = round(100.0 * latest_tokens / window, 1) if window else None
+    return {
+        "final_cost": round(total_cost, 4),
+        "final_context_pct": pct,
+        "model": latest_model,
+        "turn_count": turns,
+    }
 
 
 def _context_window_for(model):
