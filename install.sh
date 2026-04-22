@@ -38,6 +38,12 @@ cp "$BINARY" "$APP_BINARY"
 if [ -f "$SCRIPT_DIR/assets/AppIcon.icns" ]; then
     cp "$SCRIPT_DIR/assets/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 fi
+# Bundle hook scripts inside the .app so dev and distributed builds share
+# the same path layout (Contents/Resources/run_update_status.sh).
+cp "$SCRIPT_DIR/update_status.py"     "$APP_BUNDLE/Contents/Resources/"
+cp "$SCRIPT_DIR/run_update_status.sh" "$APP_BUNDLE/Contents/Resources/"
+cp "$SCRIPT_DIR/configure.sh"         "$APP_BUNDLE/Contents/Resources/" 2>/dev/null || true
+chmod +x "$APP_BUNDLE/Contents/Resources/"*.sh "$APP_BUNDLE/Contents/Resources/"*.py
 cat > "$APP_BUNDLE/Contents/Info.plist" <<INFOPLIST_EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -84,7 +90,7 @@ chmod +x "$SCRIPT_DIR/uninstall.sh"
 # ---------- 5. Smart hook configuration ----------
 echo "Configuring Claude Code hooks..."
 
-/usr/bin/python3 - "$CLAUDE_SETTINGS" "$SCRIPT_DIR" <<'MERGE_EOF'
+/usr/bin/python3 - "$CLAUDE_SETTINGS" "$APP_BUNDLE/Contents/Resources" <<'MERGE_EOF'
 import json, sys, os
 
 settings_path = sys.argv[1]

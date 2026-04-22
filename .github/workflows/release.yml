@@ -16,23 +16,82 @@ jobs:
         run: swift test
 
       - name: Build universal binary (arm64 + x86_64)
-        run: |
-          swift build -c release --arch arm64 --arch x86_64
-          cp .build/apple/Products/Release/AgentPulse AgentPulse
-          chmod +x AgentPulse
+        run: swift build -c release --arch arm64 --arch x86_64
 
-      - name: Verify binary
+      - name: Assemble AgentPulse.app bundle
         run: |
-          file AgentPulse
-          ./AgentPulse --help 2>&1 || true
+          VERSION="${GITHUB_REF_NAME#v}"
+          APP="AgentPulse.app"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
 
-      - name: Create tarball
+          # Binary
+          cp .build/apple/Products/Release/AgentPulse "$APP/Contents/MacOS/AgentPulse"
+          chmod +x "$APP/Contents/MacOS/AgentPulse"
+
+          # Icon
+          if [ -f assets/AppIcon.icns ]; then
+              cp assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+          fi
+
+          # Python hook + configure scripts live inside the bundle so their
+          # paths stay stable regardless of where the user moves the .app.
+          cp update_status.py        "$APP/Contents/Resources/"
+          cp run_update_status.sh    "$APP/Contents/Resources/"
+          cp configure.sh            "$APP/Contents/Resources/"
+          chmod +x "$APP/Contents/Resources/"*.sh "$APP/Contents/Resources/"*.py
+
+          # Info.plist — version comes from the tag name
+          cat > "$APP/Contents/Info.plist" <<INFOPLIST_EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleIdentifier</key>
+              <string>com.agentpulse.menubar</string>
+              <key>CFBundleName</key>
+              <string>AgentPulse</string>
+              <key>CFBundleExecutable</key>
+              <string>AgentPulse</string>
+              <key>CFBundleIconFile</key>
+              <string>AppIcon</string>
+              <key>CFBundleVersion</key>
+              <string>${VERSION}</string>
+              <key>CFBundleShortVersionString</key>
+              <string>${VERSION}</string>
+              <key>LSUIElement</key>
+              <true/>
+              <key>LSMinimumSystemVersion</key>
+              <string>15.0</string>
+              <key>NSHumanReadableCopyright</key>
+              <string>Copyright © 2026 Laurence Kim</string>
+          </dict>
+          </plist>
+          INFOPLIST_EOF
+
+      - name: Verify app bundle structure
+        run: |
+          test -x AgentPulse.app/Contents/MacOS/AgentPulse
+          test -f AgentPulse.app/Contents/Info.plist
+          test -x AgentPulse.app/Contents/Resources/configure.sh
+          test -x AgentPulse.app/Contents/Resources/run_update_status.sh
+          test -x AgentPulse.app/Contents/Resources/update_status.py
+          file AgentPulse.app/Contents/MacOS/AgentPulse
+
+      - name: Zip with ditto (preserves macOS attributes + permissions)
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent AgentPulse.app AgentPulse-${{ github.ref_name }}.zip
+
+      - name: Create source-install tarball (for contributors)
         run: |
           tar czf agentpulse-${{ github.ref_name }}-macos-universal.tar.gz \
-            AgentPulse install.sh uninstall.sh update_status.py run_update_status.sh
+            .build/apple/Products/Release/AgentPulse \
+            install.sh uninstall.sh update_status.py run_update_status.sh configure.sh
 
-      - name: Create GitHub Release
+      - name: Attach artifacts to release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
-          files: agentpulse-${{ github.ref_name }}-macos-universal.tar.gz
+          files: |
+            AgentPulse-${{ github.ref_name }}.zip
+            agentpulse-${{ github.ref_name }}-macos-universal.tar.gz

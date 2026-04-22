@@ -8,19 +8,29 @@ Zero dependencies — single compiled Swift binary. See every session's status a
 
 ## Install
 
+### Option A — Download the prebuilt `.app` (recommended)
+
+1. Grab `AgentPulse-vX.Y.Z.zip` from the [latest release](https://github.com/enzobelline/agentpulse/releases/latest)
+2. Unzip, drag `AgentPulse.app` to `/Applications`
+3. One-time configure:
+
+```bash
+/Applications/AgentPulse.app/Contents/Resources/configure.sh
+```
+
+Add `--yes` to skip prompts.
+
+### Option B — Build from source
+
 ```bash
 git clone https://github.com/enzobelline/agentpulse.git
 cd agentpulse
 ./install.sh
 ```
 
-This will:
-1. Build the Swift binary
-2. Configure Claude Code hooks in `~/.claude/settings.json`
-3. Optionally install `terminal-notifier` for rich notifications
-4. Set up a LaunchAgent for auto-start on login
+Requires Xcode Command Line Tools (`xcode-select --install`).
 
-Or download the latest universal binary (arm64 + x86_64) from [Releases](https://github.com/enzobelline/agentpulse/releases) and run `./install.sh`.
+Both paths set up the same thing: Claude Code hooks, a LaunchAgent, and the optional `terminal-notifier` integration.
 
 ## Uninstall
 
