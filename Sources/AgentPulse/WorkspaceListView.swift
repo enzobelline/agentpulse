@@ -1,6 +1,13 @@
 import SwiftUI
 import AgentPulseLib
 
+struct WorkspaceSessionMetrics {
+    var contextPct: Double?
+    var turnCount: Int?
+    var durationSec: Double?
+    var hasAny: Bool { contextPct != nil || turnCount != nil || durationSec != nil }
+}
+
 struct WorkspaceListView: View {
     var store: SessionStore
     let actions: SessionActions
@@ -9,7 +16,7 @@ struct WorkspaceListView: View {
     @State private var searchText = ""
     @State private var expandedId: String?
     @State private var expandedSessionId: String?
-    @State private var historyCache: [String: Double] = [:]  // sessionId → final_context_pct
+    @State private var historyCache: [String: HistoryEntry] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -81,7 +88,7 @@ struct WorkspaceListView: View {
                                 isExpanded: expandedId == workspace.id,
                                 actions: actions,
                                 dismiss: dismiss,
-                                contextPctFor: { resolveContextPct(sessionId: $0) },
+                                metricsFor: { resolveMetrics(sessionId: $0) },
                                 onToggle: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         expandedId = expandedId == workspace.id ? nil : workspace.id
@@ -106,21 +113,29 @@ struct WorkspaceListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             workspaces = WorkspaceManager.shared.loadAll()
-            // Build a fast lookup of closed-session final context %s once per open
-            var cache: [String: Double] = [:]
+            var cache: [String: HistoryEntry] = [:]
             for entry in SessionHistory.shared.load() {
-                if let pct = entry.finalContextPct {
-                    cache[entry.sessionId] = pct
-                }
+                cache[entry.sessionId] = entry
             }
             historyCache = cache
         }
     }
 
-    /// Prefer the live session's ctx (still running) over the saved final (closed).
-    private func resolveContextPct(sessionId: String) -> Double? {
-        if let live = store.sessions[sessionId]?.contextPct { return live }
-        return historyCache[sessionId]
+    /// Pull whatever metrics we can for a session — live first, history fallback.
+    private func resolveMetrics(sessionId: String) -> WorkspaceSessionMetrics {
+        if let live = store.sessions[sessionId] {
+            let duration: Double? = live.startedAt.map { Date().timeIntervalSince1970 - $0 }
+            // No turn count for live sessions — not persisted on Session yet.
+            return WorkspaceSessionMetrics(contextPct: live.contextPct, turnCount: nil, durationSec: duration)
+        }
+        if let past = historyCache[sessionId] {
+            return WorkspaceSessionMetrics(
+                contextPct: past.finalContextPct,
+                turnCount: past.turnCount,
+                durationSec: past.endedAt - past.startedAt
+            )
+        }
+        return WorkspaceSessionMetrics(contextPct: nil, turnCount: nil, durationSec: nil)
     }
 
     private var filtered: [WorkspaceSnapshot] {
@@ -143,7 +158,7 @@ struct WorkspaceRowView: View {
     let isExpanded: Bool
     let actions: SessionActions
     var dismiss: (() -> Void)?
-    let contextPctFor: (String) -> Double?
+    let metricsFor: (String) -> WorkspaceSessionMetrics
     let onToggle: () -> Void
     let onRename: (String) -> Void
     let onDelete: () -> Void
@@ -199,7 +214,7 @@ struct WorkspaceRowView: View {
                             isExpanded: expandedSessionId == session.sessionId,
                             actions: actions,
                             dismiss: dismiss,
-                            contextPct: contextPctFor(session.sessionId),
+                            metrics: metricsFor(session.sessionId),
                             onToggle: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     expandedSessionId = expandedSessionId == session.sessionId ? nil : session.sessionId
@@ -272,7 +287,7 @@ struct WorkspaceSessionRow: View {
     let isExpanded: Bool
     let actions: SessionActions
     var dismiss: (() -> Void)?
-    let contextPct: Double?
+    let metrics: WorkspaceSessionMetrics
     let onToggle: () -> Void
 
     @State private var isHovered = false
@@ -288,20 +303,26 @@ struct WorkspaceSessionRow: View {
                     Text(session.displayName ?? dirName)
                         .font(.system(size: 12))
                         .lineLimit(1)
-                    Text(dirName)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(dirName)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                        if metrics.hasAny {
+                            ForEach(Array(metricTokens.enumerated()), id: \.offset) { idx, token in
+                                Text("·")
+                                    .font(.caption2)
+                                    .foregroundStyle(.quaternary)
+                                Text(token.text)
+                                    .font(.caption2)
+                                    .foregroundStyle(token.color)
+                                    .monospacedDigit()
+                            }
+                        }
+                    }
                 }
 
                 Spacer()
-
-                if let pct = contextPct {
-                    Text("\(Int(pct.rounded()))%")
-                        .font(.caption2)
-                        .foregroundStyle(contextColor(for: pct))
-                        .monospacedDigit()
-                }
 
                 if session.promptTimeline != nil {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -369,6 +390,29 @@ struct WorkspaceSessionRow: View {
         if pct < 40 { return .green }
         if pct < 70 { return .yellow }
         return .red
+    }
+
+    private var metricTokens: [(text: String, color: Color)] {
+        var tokens: [(String, Color)] = []
+        if let pct = metrics.contextPct {
+            tokens.append(("\(Int(pct.rounded()))%", contextColor(for: pct)))
+        }
+        if let turns = metrics.turnCount {
+            tokens.append(("\(turns) turns", Color.secondary))
+        }
+        if let secs = metrics.durationSec {
+            tokens.append((formatDurationShort(secs), Color.secondary))
+        }
+        return tokens
+    }
+
+    private func formatDurationShort(_ secs: Double) -> String {
+        let mins = Int(secs) / 60
+        if mins < 1 { return "<1m" }
+        if mins < 60 { return "\(mins)m" }
+        let hrs = mins / 60
+        let rem = mins % 60
+        return rem > 0 ? "\(hrs)h\(rem)m" : "\(hrs)h"
     }
 }
 
