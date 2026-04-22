@@ -54,7 +54,7 @@ struct PopoverContentView: View {
                 case .active:
                     sessionsContent
                 case .workspaces:
-                    WorkspaceListView(actions: actions, dismiss: dismiss)
+                    WorkspaceListView(store: store, actions: actions, dismiss: dismiss)
                 case .history:
                     HistoryView(actions: actions, dismiss: dismiss)
                 case .settings:

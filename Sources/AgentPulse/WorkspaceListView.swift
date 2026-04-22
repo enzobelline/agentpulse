@@ -2,12 +2,14 @@ import SwiftUI
 import AgentPulseLib
 
 struct WorkspaceListView: View {
+    var store: SessionStore
     let actions: SessionActions
     var dismiss: (() -> Void)?
     @State private var workspaces: [WorkspaceSnapshot] = []
     @State private var searchText = ""
     @State private var expandedId: String?
     @State private var expandedSessionId: String?
+    @State private var historyCache: [String: Double] = [:]  // sessionId → final_context_pct
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -79,6 +81,7 @@ struct WorkspaceListView: View {
                                 isExpanded: expandedId == workspace.id,
                                 actions: actions,
                                 dismiss: dismiss,
+                                contextPctFor: { resolveContextPct(sessionId: $0) },
                                 onToggle: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         expandedId = expandedId == workspace.id ? nil : workspace.id
@@ -101,7 +104,23 @@ struct WorkspaceListView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { workspaces = WorkspaceManager.shared.loadAll() }
+        .onAppear {
+            workspaces = WorkspaceManager.shared.loadAll()
+            // Build a fast lookup of closed-session final context %s once per open
+            var cache: [String: Double] = [:]
+            for entry in SessionHistory.shared.load() {
+                if let pct = entry.finalContextPct {
+                    cache[entry.sessionId] = pct
+                }
+            }
+            historyCache = cache
+        }
+    }
+
+    /// Prefer the live session's ctx (still running) over the saved final (closed).
+    private func resolveContextPct(sessionId: String) -> Double? {
+        if let live = store.sessions[sessionId]?.contextPct { return live }
+        return historyCache[sessionId]
     }
 
     private var filtered: [WorkspaceSnapshot] {
@@ -124,6 +143,7 @@ struct WorkspaceRowView: View {
     let isExpanded: Bool
     let actions: SessionActions
     var dismiss: (() -> Void)?
+    let contextPctFor: (String) -> Double?
     let onToggle: () -> Void
     let onRename: (String) -> Void
     let onDelete: () -> Void
@@ -179,6 +199,7 @@ struct WorkspaceRowView: View {
                             isExpanded: expandedSessionId == session.sessionId,
                             actions: actions,
                             dismiss: dismiss,
+                            contextPct: contextPctFor(session.sessionId),
                             onToggle: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     expandedSessionId = expandedSessionId == session.sessionId ? nil : session.sessionId
@@ -251,6 +272,7 @@ struct WorkspaceSessionRow: View {
     let isExpanded: Bool
     let actions: SessionActions
     var dismiss: (() -> Void)?
+    let contextPct: Double?
     let onToggle: () -> Void
 
     @State private var isHovered = false
@@ -273,6 +295,13 @@ struct WorkspaceSessionRow: View {
                 }
 
                 Spacer()
+
+                if let pct = contextPct {
+                    Text("\(Int(pct.rounded()))%")
+                        .font(.caption2)
+                        .foregroundStyle(contextColor(for: pct))
+                        .monospacedDigit()
+                }
 
                 if session.promptTimeline != nil {
                     Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
@@ -334,6 +363,12 @@ struct WorkspaceSessionRow: View {
 
     private var dirName: String {
         URL(fileURLWithPath: session.directory).lastPathComponent
+    }
+
+    private func contextColor(for pct: Double) -> Color {
+        if pct < 40 { return .green }
+        if pct < 70 { return .yellow }
+        return .red
     }
 }
 
