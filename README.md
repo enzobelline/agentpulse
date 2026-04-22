@@ -2,7 +2,7 @@
 
 Real-time Claude Code session monitor for your macOS menubar.
 
-![AgentPulse menubar dropdown](assets/screenshot.png)
+![AgentPulse menubar dropdown](assets/screenshot.gif)
 
 Zero dependencies — single compiled Swift binary. See every session's status at a glance, click to jump straight to its Terminal tab.
 
