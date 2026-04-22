@@ -85,8 +85,17 @@ struct PopoverContentView: View {
     // MARK: - Sessions Tab
 
     private var sessionsContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if store.sessions.isEmpty {
+        // Snapshot the sessions dict once per render so rows, counts, and
+        // footer all read from the same in-time-consistent state. Without
+        // this, @Observable can trigger partial re-renders that leave the
+        // footer counting one version while rows render another.
+        let sessions = store.sessions
+        let grouped = groupSessions(sessions)
+        let counts = countStatuses(sessions)
+        let doneCount = counts.done
+
+        return VStack(alignment: .leading, spacing: 0) {
+            if sessions.isEmpty {
                 VStack(spacing: 8) {
                     Spacer()
                     Text("○")
@@ -103,7 +112,6 @@ struct PopoverContentView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        let grouped = groupedSessions
                         ForEach(Array(grouped.enumerated()), id: \.offset) { groupIdx, group in
                             // Group header
                             if grouped.count > 1 {
@@ -135,6 +143,9 @@ struct PopoverContentView: View {
                                     onCancelEdit: { editingSessionId = nil },
                                     dismiss: dismiss
                                 )
+                                // Force a fresh view identity when status changes
+                                // so in-place mutations to Session actually re-render.
+                                .id("\(key):\(session.status)")
                                 Divider().padding(.horizontal, 16).opacity(0.5)
                             }
                         }
@@ -157,7 +168,7 @@ struct PopoverContentView: View {
                 .font(.caption)
                 .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
 
-                if !store.sessions.isEmpty {
+                if !sessions.isEmpty {
                     if showSavedConfirmation {
                         Text("Saved!")
                             .font(.caption)
@@ -165,7 +176,7 @@ struct PopoverContentView: View {
                             .transition(.opacity)
                     } else {
                         Button("Save") {
-                            WorkspaceManager.shared.save(sessions: store.sessions)
+                            WorkspaceManager.shared.save(sessions: sessions)
                             withAnimation { showSavedConfirmation = true }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                                 withAnimation { showSavedConfirmation = false }
@@ -178,10 +189,9 @@ struct PopoverContentView: View {
                         .transition(.opacity)
                     }
 
-                    let doneCount = store.sessions.values.filter { $0.status == "done" }.count
                     if doneCount > 0 {
                         Button("Clear Done (\(doneCount))") {
-                            let keys = store.sessions.filter { $0.value.status == "done" }.map(\.key)
+                            let keys = sessions.filter { $0.value.status == "done" }.map(\.key)
                             store.removeSessions(keys)
                         }
                         .buttonStyle(.plain)
@@ -193,7 +203,6 @@ struct PopoverContentView: View {
 
                 Spacer()
 
-                let counts = statusCounts
                 if counts.running > 0 {
                     Text("\(counts.running) running")
                         .font(.caption2)
@@ -218,9 +227,9 @@ struct PopoverContentView: View {
 
     // MARK: - Grouping
 
-    private var groupedSessions: [(directory: String, items: [(key: String, session: Session)])] {
+    private func groupSessions(_ sessions: [String: Session]) -> [(directory: String, items: [(key: String, session: Session)])] {
         let sorted = AgentPulseLib.sortedByPriority(
-            store.sessions.map { $0 },
+            sessions.map { $0 },
             pinnedSessions: store.settings.pinnedSessions
         )
         var groups: [(directory: String, items: [(key: String, session: Session)])] = []
@@ -262,9 +271,9 @@ struct PopoverContentView: View {
         }
     }
 
-    private var statusCounts: (running: Int, waiting: Int, done: Int) {
+    private func countStatuses(_ sessions: [String: Session]) -> (running: Int, waiting: Int, done: Int) {
         var r = 0, w = 0, d = 0
-        for s in store.sessions.values {
+        for s in sessions.values {
             switch s.status {
             case "running": r += 1
             case "waiting": w += 1
