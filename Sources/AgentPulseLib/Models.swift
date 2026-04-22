@@ -19,6 +19,7 @@ public struct Session: Codable {
     public var keywords: [String]?
     public var promptTimeline: [String]?
     public var contextPct: Double?
+    public var costUsd: Double?
 
     public enum CodingKeys: String, CodingKey {
         case directory
@@ -37,9 +38,10 @@ public struct Session: Codable {
         case keywords
         case promptTimeline = "prompt_timeline"
         case contextPct = "context_pct"
+        case costUsd = "cost_usd"
     }
 
-    public init(directory: String? = nil, name: String, status: String, updatedAt: TimeInterval, startedAt: TimeInterval? = nil, summary: String? = nil, sequenceNum: Int? = nil, pid: Int? = nil, symbol: String? = nil, activity: String? = nil, tty: String? = nil, lastMessage: String? = nil, displayName: String? = nil, keywords: [String]? = nil, contextPct: Double? = nil) {
+    public init(directory: String? = nil, name: String, status: String, updatedAt: TimeInterval, startedAt: TimeInterval? = nil, summary: String? = nil, sequenceNum: Int? = nil, pid: Int? = nil, symbol: String? = nil, activity: String? = nil, tty: String? = nil, lastMessage: String? = nil, displayName: String? = nil, keywords: [String]? = nil, contextPct: Double? = nil, costUsd: Double? = nil) {
         self.directory = directory
         self.name = name
         self.status = status
@@ -55,6 +57,7 @@ public struct Session: Codable {
         self.displayName = displayName
         self.keywords = keywords
         self.contextPct = contextPct
+        self.costUsd = costUsd
     }
 }
 
