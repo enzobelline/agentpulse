@@ -5,8 +5,8 @@ Thanks for your interest in contributing! AgentPulse is a native macOS menubar a
 ## Getting Started
 
 ```bash
-git clone https://github.com/enzobelline/agentpulse_swift.git
-cd agentpulse_swift
+git clone https://github.com/enzobelline/agentpulse.git
+cd agentpulse
 swift build -c release    # compiles the app binary
 swift test                # runs 145 tests across 7 suites
 ```
@@ -79,7 +79,7 @@ No linter configured yet. Follow existing patterns:
 
 ## Areas Where Help is Wanted
 
-Check [issues labeled `help wanted`](https://github.com/enzobelline/agentpulse_swift/labels/help%20wanted) for current opportunities. Some bigger areas:
+Check [issues labeled `help wanted`](https://github.com/enzobelline/agentpulse/labels/help%20wanted) for current opportunities. Some bigger areas:
 
 - **iTerm2 / Warp support** — attach to sessions in terminals other than Terminal.app
 - **Homebrew formula** — package for easy distribution

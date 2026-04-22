@@ -54,7 +54,7 @@ Task tool subagents do NOT fire separate hooks — they run inside the same Clau
 
 ### Feature 5 Tweak: Worktree Session Grouping
 
-Worktree sessions now group with their parent repo in the dropdown menu. A session in `agentpulse_swift-falcon` appears under the `agentpulse_swift` group header instead of its own separate group.
+Worktree sessions now group with their parent repo in the dropdown menu. A session in `my-repo-feature` appears under the `my-repo` group header instead of its own separate group.
 
 - [x] `groupKey(forDirectory:)` in WorktreeHelpers.swift — maps worktree paths to parent repo path
 - [x] `buildMenu()` uses `groupKey` for grouping instead of raw directory
