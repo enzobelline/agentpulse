@@ -41,7 +41,7 @@ final class SessionActions {
                 end tell
                 """
             // Run off main thread to avoid blocking UI
-            Task.detached { [weak self] in
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
                 process.arguments = ["-e", script]
@@ -54,10 +54,10 @@ final class SessionActions {
                     let data = pipe.fileHandleForReading.readDataToEndOfFile()
                     let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     if output != "found" {
-                        await MainActor.run { self?.openTerminalAt(fallbackDir) }
+                        DispatchQueue.main.async { self?.openTerminalAt(fallbackDir) }
                     }
                 } catch {
-                    await MainActor.run { self?.openTerminalAt(fallbackDir) }
+                    DispatchQueue.main.async { self?.openTerminalAt(fallbackDir) }
                 }
             }
         }
