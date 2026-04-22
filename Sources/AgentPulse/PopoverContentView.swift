@@ -16,6 +16,7 @@ struct PopoverContentView: View {
     @State private var spinnerIdx = 0
     @State private var tick = 0  // drives live timestamp updates
     @State private var showSavedConfirmation = false
+    @State private var editingSessionId: String?
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -125,6 +126,13 @@ struct PopoverContentView: View {
                                     spinnerIdx: spinnerIdx,
                                     isPinned: store.settings.pinnedSessions.contains(key),
                                     tick: tick,
+                                    isEditing: editingSessionId == key,
+                                    onStartEdit: { editingSessionId = key },
+                                    onCommitEdit: { newName in
+                                        store.renameSession(key, displayName: newName.isEmpty ? nil : newName)
+                                        editingSessionId = nil
+                                    },
+                                    onCancelEdit: { editingSessionId = nil },
                                     dismiss: dismiss
                                 )
                                 Divider().padding(.horizontal, 16).opacity(0.5)
@@ -277,9 +285,15 @@ struct SessionRowView: View {
     var spinnerIdx: Int = 0
     var isPinned: Bool = false
     var tick: Int = 0  // triggers duration recalculation
+    var isEditing: Bool = false
+    var onStartEdit: () -> Void = {}
+    var onCommitEdit: (String) -> Void = { _ in }
+    var onCancelEdit: () -> Void = {}
     var dismiss: (() -> Void)?
 
     @State private var isHovered = false
+    @State private var editBuffer: String = ""
+    @FocusState private var editFieldFocused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -303,9 +317,32 @@ struct SessionRowView: View {
                             .font(.system(size: 9))
                             .foregroundStyle(.orange)
                     }
-                    Text(summaryText)
-                        .font(.system(size: 14))
-                        .lineLimit(1)
+                    if isEditing {
+                        TextField("", text: $editBuffer)
+                            .font(.system(size: 14))
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                            .focused($editFieldFocused)
+                            .onAppear {
+                                editBuffer = session.displayName ?? AgentPulseLib.displaySummary(for: session)
+                                editFieldFocused = true
+                            }
+                            .onSubmit {
+                                onCommitEdit(editBuffer.trimmingCharacters(in: .whitespaces))
+                            }
+                            .onChange(of: editFieldFocused) { _, focused in
+                                if !focused && isEditing {
+                                    onCommitEdit(editBuffer.trimmingCharacters(in: .whitespaces))
+                                }
+                            }
+                            .onExitCommand {
+                                onCancelEdit()
+                            }
+                    } else {
+                        Text(summaryText)
+                            .font(.system(size: 14))
+                            .lineLimit(1)
+                    }
                 }
 
                 HStack(spacing: 6) {
@@ -371,7 +408,7 @@ struct SessionRowView: View {
             }
 
             Button("Rename") {
-                actions.renameSession(key: key)
+                onStartEdit()
             }
 
             Divider()

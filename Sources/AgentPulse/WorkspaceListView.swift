@@ -16,6 +16,7 @@ struct WorkspaceListView: View {
     @State private var searchText = ""
     @State private var expandedId: String?
     @State private var expandedSessionId: String?
+    @State private var editingWorkspaceId: String?
     @State private var historyCache: [String: HistoryEntry] = [:]
 
     var body: some View {
@@ -89,14 +90,21 @@ struct WorkspaceListView: View {
                                 actions: actions,
                                 dismiss: dismiss,
                                 metricsFor: { resolveMetrics(sessionId: $0) },
+                                isEditing: editingWorkspaceId == workspace.id,
+                                onStartEdit: { editingWorkspaceId = workspace.id },
+                                onCommitEdit: { newName in
+                                    let trimmed = newName.trimmingCharacters(in: .whitespaces)
+                                    if !trimmed.isEmpty {
+                                        WorkspaceManager.shared.rename(id: workspace.id, newName: trimmed)
+                                        workspaces = WorkspaceManager.shared.loadAll()
+                                    }
+                                    editingWorkspaceId = nil
+                                },
+                                onCancelEdit: { editingWorkspaceId = nil },
                                 onToggle: {
                                     withAnimation(.easeInOut(duration: 0.2)) {
                                         expandedId = expandedId == workspace.id ? nil : workspace.id
                                     }
-                                },
-                                onRename: { newName in
-                                    WorkspaceManager.shared.rename(id: workspace.id, newName: newName)
-                                    workspaces = WorkspaceManager.shared.loadAll()
                                 },
                                 onDelete: {
                                     WorkspaceManager.shared.delete(id: workspace.id)
@@ -159,12 +167,17 @@ struct WorkspaceRowView: View {
     let actions: SessionActions
     var dismiss: (() -> Void)?
     let metricsFor: (String) -> WorkspaceSessionMetrics
+    let isEditing: Bool
+    let onStartEdit: () -> Void
+    let onCommitEdit: (String) -> Void
+    let onCancelEdit: () -> Void
     let onToggle: () -> Void
-    let onRename: (String) -> Void
     let onDelete: () -> Void
 
     @State private var isHovered = false
     @State private var expandedSessionId: String?
+    @State private var editBuffer: String = ""
+    @FocusState private var editFieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -175,9 +188,26 @@ struct WorkspaceRowView: View {
                     .foregroundStyle(.secondary)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(workspace.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
+                    if isEditing {
+                        TextField("", text: $editBuffer)
+                            .font(.system(size: 13, weight: .medium))
+                            .textFieldStyle(.roundedBorder)
+                            .controlSize(.small)
+                            .focused($editFieldFocused)
+                            .onAppear {
+                                editBuffer = workspace.name
+                                editFieldFocused = true
+                            }
+                            .onSubmit { onCommitEdit(editBuffer) }
+                            .onChange(of: editFieldFocused) { _, focused in
+                                if !focused && isEditing { onCommitEdit(editBuffer) }
+                            }
+                            .onExitCommand { onCancelEdit() }
+                    } else {
+                        Text(workspace.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                    }
 
                     HStack(spacing: 6) {
                         Text("\(workspace.sessions.count) sessions")
@@ -248,30 +278,10 @@ struct WorkspaceRowView: View {
             }
             Divider()
             Button("Rename") {
-                showRenameDialog()
+                onStartEdit()
             }
             Divider()
             Button("Delete") { onDelete() }
-        }
-    }
-
-    private func showRenameDialog() {
-        let alert = NSAlert()
-        alert.messageText = "Rename Workspace"
-        alert.informativeText = "Enter a name for this workspace:"
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
-        input.stringValue = workspace.name
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
-            if !name.isEmpty {
-                onRename(name)
-            }
         }
     }
 

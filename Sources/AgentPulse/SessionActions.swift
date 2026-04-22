@@ -15,11 +15,8 @@ final class SessionActions {
 
     func goToTerminal(key: String) {
         let session = store.sessions[key]
-        // Done sessions have stale TTYs — always open new terminal
-        if session?.status == "done" {
-            openTerminalAt(session?.directory ?? key)
-            return
-        }
+        // Try TTY attach for any status — the AppleScript's "not found" path
+        // gracefully falls back to openTerminalAt if the window actually is gone.
         switch resolveAttachAction(session: session, sessionKey: key) {
         case .openTerminal(let dir):
             openTerminalAt(dir)
@@ -86,30 +83,6 @@ final class SessionActions {
 
     func isPinned(key: String) -> Bool {
         store.settings.pinnedSessions.contains(key)
-    }
-
-    // MARK: - Rename
-
-    func renameSession(key: String) {
-        let currentName = store.sessions[key]?.displayName ?? store.sessions[key]?.summary ?? ""
-        let alert = NSAlert()
-        alert.messageText = "Rename Session"
-        alert.informativeText = "Enter a name for this session (max 40 chars):"
-        alert.addButton(withTitle: "Save")
-        alert.addButton(withTitle: "Cancel")
-
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        input.stringValue = currentName
-        input.placeholderString = "e.g. auth refactor, bug #342"
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
-
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            let raw = input.stringValue.trimmingCharacters(in: .whitespaces)
-            let newName = raw.count > 40 ? String(raw.prefix(40)) : raw
-            store.renameSession(key, displayName: newName.isEmpty ? nil : newName)
-        }
     }
 
     // MARK: - Dismiss
