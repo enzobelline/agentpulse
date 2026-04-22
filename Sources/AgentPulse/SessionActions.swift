@@ -25,14 +25,16 @@ final class SessionActions {
             let script = """
                 tell application "Terminal"
                     repeat with w in windows
-                        repeat with t in tabs of w
-                            if tty of t is "\(tty)" then
-                                set selected tab of w to t
-                                set frontmost of w to true
-                                activate
-                                return "found"
-                            end if
-                        end repeat
+                        try
+                            repeat with t in tabs of w
+                                if tty of t is "\(tty)" then
+                                    set selected tab of w to t
+                                    set frontmost of w to true
+                                    activate
+                                    return "found"
+                                end if
+                            end repeat
+                        end try
                     end repeat
                     return "not found"
                 end tell
