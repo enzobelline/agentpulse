@@ -3,7 +3,7 @@ import SwiftUI
 import AgentPulseLib
 
 @MainActor
-final class StatusBarController: NSObject, SessionStoreDelegate {
+final class StatusBarController: NSObject, SessionStoreDelegate, NSPopoverDelegate {
     let store: SessionStore
     private let statusItem: NSStatusItem
     private let worktreeManager = WorktreeManager()
@@ -25,6 +25,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
 
         popover.contentSize = NSSize(width: 500, height: 350)
         popover.behavior = .transient
+        popover.delegate = self
         let actions = SessionActions(store: store)
         popover.contentViewController = NSHostingController(
             rootView: PopoverContentView(store: store, dismiss: { [weak self] in
@@ -67,6 +68,17 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
             MainActor.assumeIsolated {
                 self?.togglePopover(nil)
             }
+        }
+    }
+
+    // MARK: - NSPopoverDelegate
+
+    nonisolated func popoverDidClose(_ notification: Notification) {
+        // Force an immediate title refresh so the menu bar doesn't stay frozen
+        // with stale state after the popover closes. Without this, the user
+        // waits up to ~1s for the next animation-timer tick.
+        MainActor.assumeIsolated {
+            updateTitle()
         }
     }
 
