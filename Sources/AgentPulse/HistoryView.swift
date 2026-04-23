@@ -7,6 +7,8 @@ struct HistoryView: View {
     @State private var searchText = ""
     @State private var entries: [HistoryEntry] = []
     @State private var expandedId: String?
+    @State private var confirmingClear = false
+    @State private var clearResetTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -18,21 +20,37 @@ struct HistoryView: View {
                 Text("\(entries.count)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Clear") {
-                    let alert = NSAlert()
-                    alert.messageText = "Clear History?"
-                    alert.informativeText = "This will delete all session history. This cannot be undone."
-                    alert.addButton(withTitle: "Clear")
-                    alert.addButton(withTitle: "Cancel")
-                    alert.alertStyle = .warning
-                    if alert.runModal() == .alertFirstButtonReturn {
-                        SessionHistory.shared.clearAll()
-                        entries = []
+                if !entries.isEmpty {
+                    Button(confirmingClear ? "Confirm?" : "Clear") {
+                        if confirmingClear {
+                            clearResetTask?.cancel()
+                            SessionHistory.shared.clearAll()
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                entries = []
+                                confirmingClear = false
+                            }
+                        } else {
+                            withAnimation(.easeIn(duration: 0.15)) {
+                                confirmingClear = true
+                            }
+                            clearResetTask?.cancel()
+                            clearResetTask = Task {
+                                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                                if !Task.isCancelled {
+                                    await MainActor.run {
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            confirmingClear = false
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
+                    .font(.caption.weight(confirmingClear ? .semibold : .regular))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(confirmingClear ? Color.red : .red.opacity(0.75))
+                    .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
                 }
-                .font(.caption)
-                .buttonStyle(.plain)
-                .foregroundStyle(.red.opacity(0.8))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)

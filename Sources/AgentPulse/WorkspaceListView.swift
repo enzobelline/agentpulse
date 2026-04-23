@@ -18,6 +18,8 @@ struct WorkspaceListView: View {
     @State private var expandedSessionId: String?
     @State private var editingWorkspaceId: String?
     @State private var historyCache: [String: HistoryEntry] = [:]
+    @State private var confirmingClearAll = false
+    @State private var clearAllResetTask: Task<Void, Never>?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -31,23 +33,38 @@ struct WorkspaceListView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 if !workspaces.isEmpty {
-                    Button("Clear All") {
-                        let alert = NSAlert()
-                        alert.messageText = "Delete All Workspaces?"
-                        alert.informativeText = "This will remove all saved workspaces. This cannot be undone."
-                        alert.addButton(withTitle: "Delete All")
-                        alert.addButton(withTitle: "Cancel")
-                        alert.alertStyle = .warning
-                        if alert.runModal() == .alertFirstButtonReturn {
+                    Button(confirmingClearAll ? "Confirm?" : "Clear All") {
+                        if confirmingClearAll {
+                            // Second click — actually delete
+                            clearAllResetTask?.cancel()
                             for ws in workspaces {
                                 WorkspaceManager.shared.delete(id: ws.id)
                             }
-                            workspaces = []
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                workspaces = []
+                                confirmingClearAll = false
+                            }
+                        } else {
+                            // First click — arm the confirm, auto-revert after 3s
+                            withAnimation(.easeIn(duration: 0.15)) {
+                                confirmingClearAll = true
+                            }
+                            clearAllResetTask?.cancel()
+                            clearAllResetTask = Task {
+                                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                                if !Task.isCancelled {
+                                    await MainActor.run {
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            confirmingClearAll = false
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
-                    .font(.caption)
+                    .font(.caption.weight(confirmingClearAll ? .semibold : .regular))
                     .buttonStyle(.plain)
-                    .foregroundStyle(.red.opacity(0.8))
+                    .foregroundStyle(confirmingClearAll ? Color.red : .red.opacity(0.75))
                     .onHover { h in if h { NSCursor.pointingHand.set() } else { NSCursor.arrow.set() } }
                 }
             }
