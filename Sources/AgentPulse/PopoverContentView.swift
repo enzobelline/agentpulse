@@ -492,11 +492,25 @@ struct SessionRowView: View {
     }
 
     private var summaryText: String {
-        if let name = session.displayName, !name.isEmpty {
-            let summary = AgentPulseLib.displaySummary(for: session)
-            return summary.isEmpty ? name : "\(name) | \(summary)"
+        let summary = AgentPulseLib.displaySummary(for: session)
+        guard let rawName = session.displayName, !rawName.isEmpty else {
+            return summary
         }
-        return AgentPulseLib.displaySummary(for: session)
+        // Always make sure the summary gets to show: cap the name so the
+        // pipe + prompt are visible on the row. Budget: ~65 total chars,
+        // name ≤ 25, summary takes the rest.
+        let maxName = 25
+        let totalBudget = 65
+        let name = rawName.count > maxName
+            ? String(rawName.prefix(maxName - 1)) + "…"
+            : rawName
+        guard !summary.isEmpty else { return name }
+        let summaryBudget = max(0, totalBudget - name.count - 3)  // " | "
+        guard summaryBudget > 8 else { return name }
+        let cleanSummary = summary.count > summaryBudget
+            ? String(summary.prefix(summaryBudget - 1)) + "…"
+            : summary
+        return "\(name) | \(cleanSummary)"
     }
 
     private var directoryName: String {
