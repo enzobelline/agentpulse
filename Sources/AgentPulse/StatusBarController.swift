@@ -106,13 +106,18 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
     // MARK: - Title
 
     private func updateTitle() {
+        // Freeze the title while the popover is open. Any width change in the
+        // status-item button moves its anchor rect, leaving the popover's arrow
+        // pointing at stale coordinates. We keep the spinner index advancing so
+        // animation resumes cleanly once the popover closes.
+        spinnerIdx = (spinnerIdx + 1) % Constants.spinnerFrames.count
+        if popover.isShown { return }
+
         let all = store.sessions
         guard !all.isEmpty else {
             statusItem.button?.title = Constants.iconSleeping
             return
         }
-
-        spinnerIdx = (spinnerIdx + 1) % Constants.spinnerFrames.count
 
         let sorted = AgentPulseLib.sortedByPriority(all.map { $0 }, pinnedSessions: store.settings.pinnedSessions)
         let pinnedSet = Set(store.settings.pinnedSessions)
