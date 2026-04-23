@@ -83,7 +83,8 @@ Check [issues labeled `help wanted`](https://github.com/enzobelline/agentpulse/l
 
 - **iTerm2 / Warp support** — attach to sessions in terminals other than Terminal.app
 - **Homebrew formula** — package for easy distribution
-- **App bundle** — proper .app with code signing for Gatekeeper and permissions
+- **Code signing & notarization** — the released `.app` is currently unsigned, so users see a Gatekeeper warning on first launch. Requires an Apple Developer account.
+- **Sparkle auto-updates** — depends on signed builds landing first.
 - **Linux port** — systray equivalent, different file watching
 
 ## Reporting Bugs

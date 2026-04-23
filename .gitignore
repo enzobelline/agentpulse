@@ -11,3 +11,5 @@ test_latency.sh
 .planning/
 /AgentPulse
 /AgentPulse.app/
+__pycache__/
+*.pyc

@@ -58,9 +58,13 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<INFOPLIST_EOF
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleVersion</key>
-    <string>3.0.0</string>
+    <string>0.0.0-dev</string>
+    <key>CFBundleShortVersionString</key>
+    <string>0.0.0-dev</string>
     <key>LSUIElement</key>
     <true/>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
 </dict>
 </plist>
 INFOPLIST_EOF

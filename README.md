@@ -69,7 +69,7 @@ Sessions needing attention (waiting/done) float to the top.
 - **Auto-Clear** — done sessions auto-remove after a configurable TTL
 - **Configurable Sounds** — per-event sound picker (hover to preview)
 - **Single Instance** — duplicate processes detected and prevented automatically
-- **Help Menu** — keyboard shortcuts reference, bug reporting link, about info
+- **Report a Bug** — Settings tab links straight to the GitHub issue tracker
 
 ## How It Works
 

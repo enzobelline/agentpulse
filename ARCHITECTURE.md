@@ -461,7 +461,9 @@ Both jobs use `.build/` caching keyed on `Package.swift`, `Package.resolved`, an
 ### Release process
 
 1. Merge changes to main (CI must pass)
-2. `git tag v3.0.0 && git push origin v3.0.0`
-3. Release workflow builds a universal binary (arm64 + x86_64), packages it with install scripts into a tarball, and creates a GitHub Release with auto-generated release notes
+2. `git tag -a v0.1.x -m "release notes" && git push origin v0.1.x`
+3. Release workflow builds a universal binary (arm64 + x86_64), assembles `AgentPulse.app`, zips it with `ditto`, and creates a GitHub Release with auto-generated notes
 
-The tarball contains everything a user needs: `AgentPulse`, `install.sh`, `uninstall.sh`, `update_status.py`, `run_update_status.sh`.
+Artifacts attached to each release:
+- `AgentPulse-v0.1.x.zip` — the `.app` bundle (recommended path for users)
+- `agentpulse-v0.1.x-macos-universal.tar.gz` — raw binary + install scripts (for contributors who prefer source-style install)
