@@ -147,41 +147,7 @@ final class StatusBarController: NSObject, SessionStoreDelegate {
             allParts.append("(\(overflow))")
         }
 
-        // Prepend today's estimated cost across live and recently-closed sessions.
-        // Only shows if we actually have cost data (skips quietly otherwise).
-        if let costLabel = dailyCostLabel() {
-            allParts.insert(costLabel, at: 0)
-        }
-
         statusItem.button?.title = allParts.joined(separator: " ")
-    }
-
-    /// Sum live session cost_usd + today's history final_cost, local-day bucketed.
-    /// Returns a `$X.YZ` string, or nil if there's nothing to show.
-    private func dailyCostLabel() -> String? {
-        var total: Double = 0
-
-        for s in store.sessions.values {
-            if let c = s.costUsd { total += c }
-        }
-
-        let now = Date()
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: now).timeIntervalSince1970
-        let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now))?.timeIntervalSince1970 ?? (today + 86_400)
-
-        let liveIds = Set(store.sessions.keys)
-        for entry in SessionHistory.shared.load() {
-            guard let c = entry.finalCost else { continue }
-            guard entry.endedAt >= today, entry.endedAt < tomorrow else { continue }
-            // Skip history entries whose session is still live — we already
-            // counted their live costUsd above.
-            if liveIds.contains(entry.sessionId) { continue }
-            total += c
-        }
-
-        guard total > 0 else { return nil }
-        return String(format: "$%.2f", total)
     }
 
     private func iconFor(_ s: Session) -> String {

@@ -689,11 +689,6 @@ def update_status(status, summary=None, stdin_data=None):
                 if pct is not None:
                     session["context_pct"] = pct
 
-                # Running cost estimate (pricing-table based, same math as history close)
-                finals = compute_final_metrics(session_key)
-                if finals and finals.get("final_cost") is not None:
-                    session["cost_usd"] = finals["final_cost"]
-
                 # Keyword extraction
                 session["keywords"] = extract_keywords(stdin_data, session.get("keywords"))
 
