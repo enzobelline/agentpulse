@@ -137,7 +137,10 @@ struct PopoverContentView: View {
                                     isEditing: editingSessionId == key,
                                     onStartEdit: { editingSessionId = key },
                                     onCommitEdit: { newName in
-                                        store.renameSession(key, displayName: newName.isEmpty ? nil : newName)
+                                        // Trim + cap at 40 chars to prevent runaway input
+                                        // (stray keystrokes after the field gets focus-stuck).
+                                        let clean = String(newName.trimmingCharacters(in: .whitespaces).prefix(40))
+                                        store.renameSession(key, displayName: clean.isEmpty ? nil : clean)
                                         editingSessionId = nil
                                     },
                                     onCancelEdit: { editingSessionId = nil },
@@ -335,6 +338,13 @@ struct SessionRowView: View {
                             .onAppear {
                                 editBuffer = session.displayName ?? AgentPulseLib.displaySummary(for: session)
                                 editFieldFocused = true
+                            }
+                            .onChange(of: editBuffer) { _, newValue in
+                                // Hard cap input length so a focus-stuck field
+                                // can't accumulate an entire paragraph.
+                                if newValue.count > 40 {
+                                    editBuffer = String(newValue.prefix(40))
+                                }
                             }
                             .onSubmit {
                                 onCommitEdit(editBuffer.trimmingCharacters(in: .whitespaces))

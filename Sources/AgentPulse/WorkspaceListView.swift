@@ -93,7 +93,7 @@ struct WorkspaceListView: View {
                                 isEditing: editingWorkspaceId == workspace.id,
                                 onStartEdit: { editingWorkspaceId = workspace.id },
                                 onCommitEdit: { newName in
-                                    let trimmed = newName.trimmingCharacters(in: .whitespaces)
+                                    let trimmed = String(newName.trimmingCharacters(in: .whitespaces).prefix(40))
                                     if !trimmed.isEmpty {
                                         WorkspaceManager.shared.rename(id: workspace.id, newName: trimmed)
                                         workspaces = WorkspaceManager.shared.loadAll()
@@ -197,6 +197,11 @@ struct WorkspaceRowView: View {
                             .onAppear {
                                 editBuffer = workspace.name
                                 editFieldFocused = true
+                            }
+                            .onChange(of: editBuffer) { _, newValue in
+                                if newValue.count > 40 {
+                                    editBuffer = String(newValue.prefix(40))
+                                }
                             }
                             .onSubmit { onCommitEdit(editBuffer) }
                             .onChange(of: editFieldFocused) { _, focused in
