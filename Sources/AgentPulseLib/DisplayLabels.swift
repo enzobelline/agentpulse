@@ -29,6 +29,36 @@ public let placeholderSummaries: Set<String> = [
     "Process ended", "Finished",
 ]
 
+/// Composes a session row's main label from display name + summary, budgeting
+/// so both stay visible on one line.
+///
+/// Rules:
+///   - No display name → just the summary
+///   - Display name + empty summary → just the name (capped to maxName)
+///   - Both → "name | summary", each truncated with … so the total fits totalBudget
+///   - If summary budget would shrink below minSummary, return just the name
+public func composedRowLabel(
+    displayName: String?,
+    summary: String,
+    maxName: Int = 25,
+    totalBudget: Int = 65,
+    minSummary: Int = 9
+) -> String {
+    guard let rawName = displayName, !rawName.isEmpty else {
+        return summary
+    }
+    let name = rawName.count > maxName
+        ? String(rawName.prefix(maxName - 1)) + "…"
+        : rawName
+    guard !summary.isEmpty else { return name }
+    let summaryBudget = max(0, totalBudget - name.count - 3)  // " | "
+    guard summaryBudget >= minSummary else { return name }
+    let cleanSummary = summary.count > summaryBudget
+        ? String(summary.prefix(summaryBudget - 1)) + "…"
+        : summary
+    return "\(name) | \(cleanSummary)"
+}
+
 /// Returns a display summary for a session, truncated on a word boundary.
 /// Falls back to the directory basename if summary is nil, empty, or a generic placeholder.
 public func displaySummary(for session: Session, maxLength: Int = 40) -> String {

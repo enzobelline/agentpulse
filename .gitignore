@@ -5,6 +5,7 @@
 DerivedData/
 .DS_Store
 .claude/
+notes/
 test_latency.sh
 *.jsonl
 .planning/
